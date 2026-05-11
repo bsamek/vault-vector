@@ -67,6 +67,16 @@ One-time Atlas setup:
 
 The local cache lives at `<vault>/.obsidian/plugins/vault-vector/embeddings.json`.
 
+### Reranking (optional)
+
+Reranking applies to both modes. When enabled, the plugin over-fetches candidates from the active backend (5× **Result limit**, capped at 50), sends them to Voyage's `/v1/rerank` endpoint, and returns the reordered top results. Most of the gain comes from promoting notes the embedding model ranked 11-50 into the top slots.
+
+- **Enable reranking** — toggle. Default off.
+- **Rerank model** — `rerank-2.5-lite` (faster) or `rerank-2.5` (more accurate). Default `rerank-2.5-lite`.
+- **Rerank instruction (optional)** — free-form text prepended to the query, e.g. _"Prefer notes that explain why over notes that list how."_
+
+Reranking always calls Voyage, even in Atlas mode, so the **Voyage API key** field must be set. Settings shows an inline warning when the toggle is on without a key. If a rerank call fails at search time, the modal falls back to vector-ordered results and shows a Notice.
+
 ## Use
 
 - **Vault Vector: Sync** — Embeds and stores every `.md` file in your vault. In Atlas mode, pushes to the collection; in Voyage mode, writes to the local cache. Removes entries for deleted files. Reports counts in a notification.
@@ -86,6 +96,7 @@ Run against the in-house Evergreen documentation (good topical breadth):
 5. Delete two doc files from the vault clone, re-run Sync. Confirm count drops by 2.
 6. Add a single huge note (over the model's token limit). Confirm the sync Notice reports it as rejected and that all other notes synced cleanly.
 7. (Voyage mode) Change the Voyage model in settings, re-run Sync. Confirm the cache is wiped and rebuilt.
+8. (Reranking) Set a Voyage API key, enable **Reranking**, re-run Search on the same queries. Top order should shift compared to step 3. Add a rerank instruction and confirm the order shifts again. Break the API key (append junk) and confirm the Notice "Rerank failed, showing vector results." and that the modal still opens with vector-ordered results.
 
 ## Limitations (MVP)
 

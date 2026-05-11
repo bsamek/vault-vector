@@ -244,6 +244,18 @@
 <p class="legend">Voyage mode uses <code>input_type=query</code> for the lookup vector (vs. <code>document</code> at sync time). This matches Voyage's recommended asymmetric retrieval setup.</p>
 </div>
 
+<h2>Reranking (optional)</h2>
+
+<p>Reranking is a search-time post-processing step that applies to <em>both</em> modes. When enabled, the backend pulls <strong>5× <code>resultLimit</code></strong> candidates (capped at 50) instead of <code>resultLimit</code>, then Voyage's <code>/v1/rerank</code> endpoint does joint query-document attention and returns a reordered list. The plugin replaces each hit's similarity score with the reranker's <code>relevance_score</code> and trims back to <code>resultLimit</code>.</p>
+
+<ul>
+  <li><strong>Why over-fetch?</strong> Most of the gain comes from promoting candidates the embedding model ranked 11-50 into the top slots. Reranking only the top-K would waste the call.</li>
+  <li><strong>Why both modes?</strong> Atlas auto-embed returns vector-ranked hits with content; the plugin can hand them straight to the reranker. Voyage-local does the same with locally cached content. The reranker path is identical past the candidate pull.</li>
+  <li><strong>Instructions</strong> are not a separate API parameter; if set, the plugin prepends the trimmed instruction to the query as <code>${instruction}\n\n${query}</code> before calling rerank.</li>
+  <li><strong>API key</strong> is reused from the Voyage-direct field. Reranking always calls Voyage, even in Atlas mode, so settings shows an inline warning when the toggle is on without a key, and the Search command aborts with a Notice if the user invokes it that way.</li>
+  <li><strong>Failure handling</strong> lives in <code>main.ts</code>: <code>applyRerank</code> throws on HTTP errors; the search closure catches, fires a Notice, and falls back to vector-ordered results. This keeps <code>search.ts</code> free of Obsidian imports.</li>
+</ul>
+
 <h2>Comparison</h2>
 
 <table>
@@ -290,8 +302,8 @@
   <li><code>src/settings.ts</code> — settings schema, defaults, and Obsidian settings UI</li>
   <li><code>src/atlas.ts</code> — lazy Atlas client + collection factory</li>
   <li><code>src/sync.ts</code> — <code>runSync</code> (Atlas) and <code>runLocalSync</code> (Voyage)</li>
-  <li><code>src/search.ts</code> — <code>executeSearch</code>, <code>executeLocalSearch</code>, and the suggest modal</li>
-  <li><code>src/voyage.ts</code> — Voyage REST client with batching</li>
+  <li><code>src/search.ts</code> — <code>executeSearch</code>, <code>executeLocalSearch</code>, <code>applyRerank</code>, <code>candidateCount</code>, and the suggest modal</li>
+  <li><code>src/voyage.ts</code> — Voyage REST client with batching, plus <code>createVoyageReranker</code> for <code>/v1/rerank</code></li>
   <li><code>src/local-store.ts</code> — JSON-backed embedding cache with diff/upsert/remove</li>
   <li><code>src/local-search.ts</code> — cosine similarity + top-K ranking</li>
 </ul>
@@ -301,7 +313,6 @@
   <li>No native modules or ANN index for local mode (revisit at ~10K+ notes).</li>
   <li>No binary cache format yet.</li>
   <li>No Voyage rate-limit, retry, or backoff handling. Errors surface; re-run sync.</li>
-  <li>No reranker pass (Voyage rerankers are an additive future plan).</li>
   <li>No live updates on file change; sync is still manual.</li>
 </ul>
 
