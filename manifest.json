@@ -3,7 +3,7 @@
   "name": "Vault Vector",
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
-  "description": "Semantic search across your vault using MongoDB Atlas automated embeddings.",
+  "description": "Semantic search across your vault, backed by MongoDB Atlas Vector Search or local Voyage AI embeddings.",
   "author": "Brian Samek",
   "isDesktopOnly": true
 }

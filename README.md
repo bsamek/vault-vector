@@ -1,35 +1,24 @@
 # Vault Vector
 
-Semantic search across your Obsidian vault using MongoDB Atlas Vector Search and automated Voyage embeddings.
+Semantic search across your Obsidian vault. Two backends:
 
-## How it works
+- **Atlas auto-embed** — MongoDB Atlas owns the embeddings and runs `$vectorSearch` server-side.
+- **Voyage direct (local)** — the plugin calls Voyage AI itself, stores embeddings in a local JSON cache, and ranks by brute-force cosine similarity in-process.
 
-`Vault Vector: Sync` pushes every Markdown file in your vault to a MongoDB Atlas collection as `{ _id: path, path, content, mtime }`. Atlas auto-generates a Voyage embedding for the `content` field on insert. `Vault Vector: Search` runs `$vectorSearch` with your raw query text; Atlas auto-embeds the query and returns the nearest notes.
+See [`docs/architecture.html`](docs/architecture.html) for a visual walkthrough of both modes.
 
-The plugin never calls an embedding API directly.
+## Which mode should I use?
 
-## Prerequisites
+| | Atlas auto-embed | Voyage direct (local) |
+|---|---|---|
+| Where embeddings live | Atlas collection | Local JSON file under the plugin folder |
+| Who calls Voyage | Atlas (under the hood) | The plugin, with your API key |
+| Network dependency | Atlas cluster | api.voyageai.com |
+| Search algorithm | Atlas `$vectorSearch` (ANN) | Brute-force cosine in-process |
+| Setup | Atlas cluster + vector index | Voyage API key |
+| Good fit | You already run Atlas, or want server-side search | You don't want to host a cluster; vaults up to a few thousand notes |
 
-- An Atlas cluster you control.
-- An Atlas database user with read/write access to the target database.
-- Network access from your machine to the cluster (IP allowlist or VPC peering as appropriate).
-
-## Atlas setup (one time)
-
-1. Create a database (default: `vault-vector`) and collection (default: `notes`) in your cluster.
-2. Create a **Vector Search** index on the collection. Name it `vault_vector` (or whatever you'll put in plugin settings). Paste this JSON into the Atlas index editor:
-
-   ```json
-   {
-     "fields": [{
-       "type": "text",
-       "path": "content",
-       "model": "voyage-3-large"
-     }]
-   }
-   ```
-
-   To use a different Voyage model, change the `model` value and recreate the index.
+Both modes coexist behind a settings toggle. You can switch freely.
 
 ## Install the plugin
 
@@ -43,35 +32,66 @@ Until this is published to the community plugins gallery:
 
 In **Settings → Vault Vector**:
 
+- **Embedding provider** — `Atlas auto-embed` or `Voyage direct (local)`.
+
+### Atlas auto-embed
+
 - **Connection URI** — `mongodb+srv://<user>:<pass>@<cluster>/...`
 - **Database** — default `vault-vector`
 - **Collection** — default `notes`
 - **Index name** — default `vault_vector`
 - **Result limit** — default `10`
 
+One-time Atlas setup:
+
+1. Create the database and collection in your cluster.
+2. Create a **Vector Search** index on the collection. Name it to match **Index name** in settings (`vault_vector` by default). Paste this JSON into the Atlas index editor:
+
+   ```json
+   {
+     "fields": [{
+       "type": "text",
+       "path": "content",
+       "model": "voyage-3-large"
+     }]
+   }
+   ```
+
+   To use a different Voyage model, change the `model` value and recreate the index.
+
+### Voyage direct (local)
+
+- **Voyage API key** — your Voyage AI API key.
+- **Voyage model** — default `voyage-4`. Changing this wipes the local cache on next sync.
+- **Result limit** — default `10`.
+
+The local cache lives at `<vault>/.obsidian/plugins/vault-vector/embeddings.json`.
+
 ## Use
 
-- **Vault Vector: Sync** — Pushes every `.md` file in your vault to Atlas and deletes Atlas docs whose files no longer exist. Reports counts in a notification.
+- **Vault Vector: Sync** — Embeds and stores every `.md` file in your vault. In Atlas mode, pushes to the collection; in Voyage mode, writes to the local cache. Removes entries for deleted files. Reports counts in a notification.
 - **Vault Vector: Search** — Opens a search modal. Type a natural-language query; results are ranked by semantic similarity. Enter opens the selected note.
 
 ## Smoke test
 
-This is the MVP's manual verification, run against the in-house Evergreen documentation (which has good topical breadth):
+Run against the in-house Evergreen documentation (good topical breadth):
 
 1. Clone the Evergreen docs repo and open it as an Obsidian vault.
-2. Run **Vault Vector: Sync**. Confirm the Atlas collection's document count equals the markdown file count.
+2. Run **Vault Vector: Sync**. Atlas mode: confirm collection count equals markdown file count. Voyage mode: confirm `embeddings.json` exists with roughly that many entries.
 3. Run **Vault Vector: Search** with each query and verify the top results are semantically on-topic, not just keyword matches:
    - "how do I retry a failed task"
    - "configuring task priorities"
    - "patch builds"
 4. Pick a result from the modal and verify the correct note opens.
-5. Delete two doc files from the vault clone, re-run Sync. Confirm Atlas count drops by 2.
-6. Add a single huge note (>32K tokens). Confirm the sync Notice reports it as rejected and that all other notes synced cleanly.
+5. Delete two doc files from the vault clone, re-run Sync. Confirm count drops by 2.
+6. Add a single huge note (over the model's token limit). Confirm the sync Notice reports it as rejected and that all other notes synced cleanly.
+7. (Voyage mode) Change the Voyage model in settings, re-run Sync. Confirm the cache is wiped and rebuilt.
 
 ## Limitations (MVP)
 
-- Manual sync only — no live updates on file change.
-- One embedding per note — notes over the model's token limit are rejected by Atlas and skipped.
-- Desktop-only (uses the Node `mongodb` driver).
+- Manual sync only, no live updates on file change.
+- One embedding per note. Notes over the model's token limit are rejected and skipped.
+- Desktop-only (Atlas mode uses the Node `mongodb` driver).
 - `.md` files only.
-- Connection URI is stored unencrypted in Obsidian's plugin data file.
+- Secrets (connection URI, Voyage API key) are stored unencrypted in Obsidian's plugin data file.
+- Voyage mode uses brute-force cosine similarity; expect it to start feeling slow above ~10K notes.
