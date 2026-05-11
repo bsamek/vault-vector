@@ -44,6 +44,7 @@ const DEBOUNCE_MS = 8000;
 const SIZE_CAP = 25;
 const AGE_CAP_MS = 60_000;
 const SWEEP_MS = 10 * 60 * 1000;
+const CATCHUP_MS = 5000;
 
 export function createAutoSync(deps: AutoSyncDeps): AutoSync {
   let unsubscribe: (() => void) | null = null;
@@ -139,6 +140,13 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
       if (!deps.isAutoSyncEnabled()) return;
       unsubscribe = deps.subscribeVaultEvents(recordEvent);
       sweepTimer = deps.setInterval(() => { requestSweep(); }, SWEEP_MS);
+      // Schedule a one-shot catch-up sweep shortly after start so any files
+      // modified while the plugin was unloaded are picked up quickly.
+      // We do not track this timer id: if stop() is called within 5s the
+      // worst case is a single deferred requestSweep() against an already-
+      // unsubscribed controller, which is harmless (pending will be empty and
+      // sweepRequested is reset on each runFlush call).
+      deps.setTimer(() => { requestSweep(); }, CATCHUP_MS);
       emitStatus({ kind: 'idle', lastSyncAt: null });
     },
     stop() {

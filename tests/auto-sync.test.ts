@@ -88,12 +88,14 @@ describe('AutoSync flush triggers', () => {
   afterEach(() => { vi.useRealTimers(); });
 
   it('flushes after 8s of idle', async () => {
+    // Suppress the catch-up timer (5000 ms) so the test can isolate the 8s
+    // debounce without the catch-up sweep firing in the middle of the window.
     let onEvent: any = null;
     const runFullSync = vi.fn(async () => ({ upserted: 1, deleted: 0, rejected: [] }));
     const deps = fakeDeps({
       subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
       runFullSync,
-      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      setTimer: (cb, ms) => ms === 5000 ? 0 : setTimeout(cb, ms) as unknown as number,
       clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
       now: () => Date.now(),
     });
@@ -107,12 +109,14 @@ describe('AutoSync flush triggers', () => {
   });
 
   it('resets debounce on each event', async () => {
+    // Suppress the catch-up timer (5000 ms) so this test can focus solely on
+    // debounce-reset behaviour without the catch-up sweep firing mid-test.
     let onEvent: any = null;
     const runFullSync = vi.fn(async () => ({ upserted: 1, deleted: 0, rejected: [] }));
     const deps = fakeDeps({
       subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
       runFullSync,
-      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      setTimer: (cb, ms) => ms === 5000 ? 0 : setTimeout(cb, ms) as unknown as number,
       clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
       now: () => Date.now(),
     });
@@ -288,5 +292,26 @@ describe('AutoSync safety-net sweep', () => {
     ctl.start();
     await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1);
     expect(runFullSync).toHaveBeenCalled();
+  });
+});
+
+describe('AutoSync catch-up', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('runs a flush ~5s after start', async () => {
+    const runFullSync = vi.fn(async () => ({ upserted: 0, deleted: 0, rejected: [] }));
+    const deps = fakeDeps({
+      runFullSync,
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(runFullSync).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2);
+    expect(runFullSync).toHaveBeenCalledOnce();
   });
 });
