@@ -233,6 +233,20 @@ describe('AutoSync flush execution', () => {
     expect(ctl.getStatus().kind).toBe('error');
   });
 
+  it('does not run runFullSync when pending is empty and no sweep requested', async () => {
+    const runFullSync = vi.fn(async () => ({ upserted: 0, deleted: 0, rejected: [] }));
+    const deps = fakeDeps({
+      runFullSync,
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    await ctl.flushNow();
+    expect(runFullSync).not.toHaveBeenCalled();
+  });
+
   it('events arriving during a flush trigger a follow-up', async () => {
     let onEvent: any = null;
     let resolveFirst: () => void = () => {};
@@ -255,5 +269,24 @@ describe('AutoSync flush execution', () => {
     resolveFirst();
     await vi.advanceTimersByTimeAsync(8001);
     expect(runFullSync).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('AutoSync safety-net sweep', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('runs a flush every 10 minutes even without events', async () => {
+    const runFullSync = vi.fn(async () => ({ upserted: 0, deleted: 0, rejected: [] }));
+    const deps = fakeDeps({
+      runFullSync,
+      setInterval: (cb, ms) => setInterval(cb, ms) as unknown as number,
+      clearInterval: (id) => clearInterval(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1);
+    expect(runFullSync).toHaveBeenCalled();
   });
 });

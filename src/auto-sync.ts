@@ -43,6 +43,7 @@ export interface AutoSync {
 const DEBOUNCE_MS = 8000;
 const SIZE_CAP = 25;
 const AGE_CAP_MS = 60_000;
+const SWEEP_MS = 10 * 60 * 1000;
 
 export function createAutoSync(deps: AutoSyncDeps): AutoSync {
   let unsubscribe: (() => void) | null = null;
@@ -56,6 +57,8 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
   const pending = new Map<string, AutoSyncOp>();
   let oldestPendingAt: number | null = null;
   let debounceTimer: number | null = null;
+  let sweepTimer: number | null = null;
+  let sweepRequested = false;
 
   function scheduleFlush(): void {
     if (debounceTimer !== null) deps.clearTimer(debounceTimer);
@@ -73,12 +76,18 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
 
   let flushing = false;
 
+  function requestSweep(): void {
+    sweepRequested = true;
+    void runFlush();
+  }
+
   async function runFlush(): Promise<void> {
     if (flushing) return;
-    if (pending.size === 0) {
+    if (pending.size === 0 && !sweepRequested) {
       emitStatus({ kind: 'idle', lastSyncAt: deps.now() });
       return;
     }
+    sweepRequested = false;
     flushing = true;
     // Snapshot the keys in flight so we only clear those on success,
     // leaving any events that arrive during the async sync intact.
@@ -129,9 +138,11 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
     start() {
       if (!deps.isAutoSyncEnabled()) return;
       unsubscribe = deps.subscribeVaultEvents(recordEvent);
+      sweepTimer = deps.setInterval(() => { requestSweep(); }, SWEEP_MS);
       emitStatus({ kind: 'idle', lastSyncAt: null });
     },
     stop() {
+      if (sweepTimer !== null) { deps.clearInterval(sweepTimer); sweepTimer = null; }
       if (unsubscribe) {
         unsubscribe();
         unsubscribe = null;
