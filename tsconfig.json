@@ -12,6 +12,7 @@
     "isolatedModules": true,
     "strictNullChecks": true,
     "esModuleInterop": true,
+    "skipLibCheck": true,
     "lib": ["DOM", "ES2020", "ES2021.String"]
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"]

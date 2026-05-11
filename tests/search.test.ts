@@ -38,10 +38,12 @@ describe('buildVectorSearchPipeline', () => {
         numCandidates: 50,
       },
     });
-    expect(pipeline[1].$project).toMatchObject({
-      path: 1,
-      content: 1,
-      score: { $meta: 'vectorSearchScore' },
+    expect(pipeline[1]).toMatchObject({
+      $project: {
+        path: 1,
+        content: 1,
+        score: { $meta: 'vectorSearchScore' },
+      },
     });
   });
 });
