@@ -49,4 +49,9 @@ describe('DEFAULT_SETTINGS', () => {
   it('defaults debug mode off', () => {
     expect(DEFAULT_SETTINGS.debugMode).toBe(false);
   });
+
+  it('defaults rerank candidate cap to 50 and doc char limit to 0 (disabled)', () => {
+    expect(DEFAULT_SETTINGS.rerankCandidateCap).toBe(50);
+    expect(DEFAULT_SETTINGS.rerankDocCharLimit).toBe(0);
+  });
 });

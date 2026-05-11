@@ -198,7 +198,12 @@ export default class VaultVectorPlugin extends Plugin {
     }
 
     const rerankCfg: RerankConfig | undefined = this.settings.rerankEnabled
-      ? { reranker: this.getReranker(), instruction: this.settings.rerankInstruction }
+      ? {
+          reranker: this.getReranker(),
+          instruction: this.settings.rerankInstruction,
+          candidateCap: this.settings.rerankCandidateCap,
+          docCharLimit: this.settings.rerankDocCharLimit,
+        }
       : undefined;
 
     const debug: DebugLogger | undefined = this.settings.debugMode

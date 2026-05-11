@@ -7,8 +7,8 @@ import type { VoyageClient, VoyageReranker } from './voyage';
 export const RERANK_CANDIDATE_MULTIPLIER = 5;
 export const RERANK_CANDIDATE_CAP = 50;
 
-export function candidateCount(limit: number): number {
-  return Math.min(limit * RERANK_CANDIDATE_MULTIPLIER, RERANK_CANDIDATE_CAP);
+export function candidateCount(limit: number, cap: number = RERANK_CANDIDATE_CAP): number {
+  return Math.min(limit * RERANK_CANDIDATE_MULTIPLIER, cap);
 }
 
 export function renderSnippet(content: string, maxChars: number = 200): string {
@@ -54,7 +54,7 @@ export async function executeSearch(
   debug?: DebugLogger,
 ): Promise<SearchHit[]> {
   if (!opts.query.trim()) return [];
-  const fetchLimit = rerank ? candidateCount(opts.limit) : opts.limit;
+  const fetchLimit = rerank ? candidateCount(opts.limit, rerank.candidateCap) : opts.limit;
   const pipeline = buildVectorSearchPipeline({
     index: opts.index,
     query: opts.query,
@@ -85,7 +85,7 @@ export async function executeLocalSearch(
   debug?: DebugLogger,
 ): Promise<SearchHit[]> {
   if (!query.trim()) return [];
-  const fetchLimit = rerank ? candidateCount(limit) : limit;
+  const fetchLimit = rerank ? candidateCount(limit, rerank.candidateCap) : limit;
   const searchStart = performance.now();
   const [queryEmbedding] = await voyage.embed([query], 'query');
   const hits = searchLocalStore(store, queryEmbedding, fetchLimit);
@@ -100,6 +100,8 @@ export async function executeLocalSearch(
 export interface RerankConfig {
   reranker: VoyageReranker;
   instruction: string;
+  candidateCap?: number;
+  docCharLimit?: number;
 }
 
 export async function applyRerank(
@@ -110,7 +112,10 @@ export async function applyRerank(
   if (hits.length === 0) return [];
   const trimmed = cfg.instruction.trim();
   const effectiveQuery = trimmed ? `${trimmed}\n\n${query}` : query;
-  const documents = hits.map(h => h.content);
+  const limit = cfg.docCharLimit ?? 0;
+  const documents = hits.map(h =>
+    limit > 0 && h.content.length > limit ? h.content.slice(0, limit) : h.content,
+  );
   const results = await cfg.reranker.rerank(effectiveQuery, documents, hits.length);
   return results.map(r => ({
     ...hits[r.index],

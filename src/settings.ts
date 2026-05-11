@@ -14,6 +14,8 @@ export interface VaultVectorSettings {
   rerankEnabled: boolean;
   rerankModel: string;
   rerankInstruction: string;
+  rerankCandidateCap: number;
+  rerankDocCharLimit: number;
   debugMode: boolean;
 }
 
@@ -29,6 +31,8 @@ export const DEFAULT_SETTINGS: VaultVectorSettings = {
   rerankEnabled: false,
   rerankModel: 'rerank-2.5-lite',
   rerankInstruction: '',
+  rerankCandidateCap: 50,
+  rerankDocCharLimit: 0,
   debugMode: false,
 };
 
@@ -189,6 +193,32 @@ export class VaultVectorSettingTab extends PluginSettingTab {
             this.plugin.settings.rerankModel = value;
             await this.plugin.saveSettings();
           })
+      );
+
+    new Setting(containerEl)
+      .setName('Rerank candidate cap')
+      .setDesc('Maximum number of candidates sent to the reranker. Lower is faster; default 50.')
+      .addText(text =>
+        text.setValue(String(this.plugin.settings.rerankCandidateCap)).onChange(async (value: string) => {
+          const n = parseInt(value, 10);
+          if (!Number.isNaN(n) && n > 0) {
+            this.plugin.settings.rerankCandidateCap = n;
+            await this.plugin.saveSettings();
+          }
+        })
+      );
+
+    new Setting(containerEl)
+      .setName('Rerank document char limit')
+      .setDesc('Truncate each candidate to this many characters before reranking. 0 disables truncation. Lower is faster; rerankers are prefix-biased so quality usually holds.')
+      .addText(text =>
+        text.setValue(String(this.plugin.settings.rerankDocCharLimit)).onChange(async (value: string) => {
+          const n = parseInt(value, 10);
+          if (!Number.isNaN(n) && n >= 0) {
+            this.plugin.settings.rerankDocCharLimit = n;
+            await this.plugin.saveSettings();
+          }
+        })
       );
 
     new Setting(containerEl)

@@ -131,13 +131,19 @@ describe('executeLocalSearch', () => {
 });
 
 describe('candidateCount', () => {
-  it('multiplies limit by 5 and caps at 50', () => {
+  it('multiplies limit by 5 and caps at 50 by default', () => {
     expect(candidateCount(1)).toBe(5);
     expect(candidateCount(5)).toBe(25);
     expect(candidateCount(10)).toBe(50);
     expect(candidateCount(11)).toBe(50);
     expect(candidateCount(20)).toBe(50);
     expect(candidateCount(100)).toBe(50);
+  });
+
+  it('respects a custom cap', () => {
+    expect(candidateCount(10, 25)).toBe(25);
+    expect(candidateCount(2, 25)).toBe(10);
+    expect(candidateCount(100, 5)).toBe(5);
   });
 });
 
@@ -195,6 +201,40 @@ describe('applyRerank', () => {
     expect(received).toBe('Prefer how-to.\n\nplain query');
   });
 
+  it('truncates document content to docCharLimit before sending to the reranker', async () => {
+    let received: string[] = [];
+    const reranker: VoyageReranker = {
+      async rerank(_q, documents) {
+        received = documents;
+        return documents.map((_, i) => ({ index: i, relevanceScore: 1 - i * 0.1 }));
+      },
+    };
+    const longHits = [
+      { path: 'a.md', snippet: 'aa', content: 'a'.repeat(5000), score: 0.9 },
+      { path: 'b.md', snippet: 'bb', content: 'b'.repeat(5000), score: 0.8 },
+    ];
+    const out = await applyRerank(longHits, 'q', { reranker, instruction: '', docCharLimit: 100 });
+    expect(received[0].length).toBe(100);
+    expect(received[1].length).toBe(100);
+    // returned hits retain the full original content
+    expect(out[0].content.length).toBe(5000);
+  });
+
+  it('does not truncate when docCharLimit is 0 or undefined', async () => {
+    let received: string[] = [];
+    const reranker: VoyageReranker = {
+      async rerank(_q, documents) {
+        received = documents;
+        return documents.map((_, i) => ({ index: i, relevanceScore: 1 }));
+      },
+    };
+    const longHits = [{ path: 'a.md', snippet: 'aa', content: 'a'.repeat(5000), score: 0.9 }];
+    await applyRerank(longHits, 'q', { reranker, instruction: '', docCharLimit: 0 });
+    expect(received[0].length).toBe(5000);
+    await applyRerank(longHits, 'q', { reranker, instruction: '' });
+    expect(received[0].length).toBe(5000);
+  });
+
   it('returns [] for empty hits without calling the reranker', async () => {
     const reranker: VoyageReranker = {
       rerank: vi.fn(async () => []),
@@ -215,6 +255,27 @@ describe('applyRerank', () => {
 });
 
 describe('executeSearch with rerank', () => {
+  it('honors a custom candidateCap from RerankConfig when over-fetching', async () => {
+    const fake = new FakeCollection();
+    fake.aggregateResults = Array.from({ length: 10 }, (_, i) => ({
+      path: `n${i}.md`,
+      content: `body ${i}`,
+      score: 1 - i * 0.01,
+    }));
+    const reranker: VoyageReranker = {
+      async rerank(_q, docs) {
+        return docs.map((_, i) => ({ index: i, relevanceScore: 1 - i * 0.1 }));
+      },
+    };
+    await executeSearch(
+      fake,
+      { index: 'idx', query: 'hi', limit: 10 },
+      { reranker, instruction: '', candidateCap: 15 },
+    );
+    const pipelineUsed = fake.lastPipeline![0] as { $vectorSearch: { limit: number } };
+    expect(pipelineUsed.$vectorSearch.limit).toBe(15);
+  });
+
   it('over-fetches candidateCount(limit) from the collection and reranks to limit', async () => {
     const fake = new FakeCollection();
     fake.aggregateResults = Array.from({ length: 25 }, (_, i) => ({
