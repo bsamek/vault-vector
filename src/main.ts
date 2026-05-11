@@ -41,10 +41,17 @@ export default class VaultVectorPlugin extends Plugin {
   private localStore: LocalStore | null = null;
   private voyage: VoyageClient | null = null;
   private reranker: VoyageReranker | null = null;
+  private statusBarEl: HTMLElement | null = null;
 
   async onload(): Promise<void> {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     this.addSettingTab(new VaultVectorSettingTab(this.app, this));
+
+    this.statusBarEl = this.addStatusBarItem();
+    this.statusBarEl.addClass('vault-vector-status');
+    this.statusBarEl.style.cursor = 'pointer';
+    this.statusBarEl.onClickEvent(() => { void this.runSyncCommand(); });
+    this.renderStatus({ kind: 'idle', lastSyncAt: null });
 
     this.addCommand({
       id: 'vault-vector-sync',
@@ -59,7 +66,39 @@ export default class VaultVectorPlugin extends Plugin {
     });
   }
 
+  private renderStatus(status: import('./auto-sync').AutoSyncStatus): void {
+    if (!this.statusBarEl) return;
+    const el = this.statusBarEl;
+    switch (status.kind) {
+      case 'idle': {
+        const stamp = status.lastSyncAt
+          ? new Date(status.lastSyncAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : 'never';
+        el.setText('VV ✓');
+        el.setAttr('title', `Vault Vector: index up to date (last sync ${stamp})`);
+        el.style.color = '';
+        break;
+      }
+      case 'pending':
+        el.setText(`VV •${status.pendingCount}`);
+        el.setAttr('title', `${status.pendingCount} changes queued, syncing soon`);
+        el.style.color = '';
+        break;
+      case 'syncing':
+        el.setText('VV ⟳');
+        el.setAttr('title', `Syncing ${status.inFlightCount} notes…`);
+        el.style.color = '';
+        break;
+      case 'error':
+        el.setText('VV !');
+        el.setAttr('title', `${status.message} (click to retry)`);
+        el.style.color = 'var(--text-error)';
+        break;
+    }
+  }
+
   async onunload(): Promise<void> {
+    this.statusBarEl = null;
     if (this.atlas) {
       await this.atlas.close();
       this.atlas = null;
