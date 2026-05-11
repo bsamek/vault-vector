@@ -49,12 +49,25 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
     deps.updateStatus(next);
   }
 
+  const pending = new Map<string, AutoSyncOp>();
+  let oldestPendingAt: number | null = null;
+
+  function recordEvent(e: AutoSyncEvent): void {
+    if (e.kind === 'rename') {
+      pending.set(e.newPath, { kind: 'rename', oldPath: e.oldPath, newPath: e.newPath });
+    } else if (e.kind === 'delete') {
+      pending.set(e.path, { kind: 'delete', path: e.path });
+    } else {
+      pending.set(e.path, { kind: 'upsert', path: e.path });
+    }
+    if (oldestPendingAt === null) oldestPendingAt = deps.now();
+    emitStatus({ kind: 'pending', pendingCount: pending.size });
+  }
+
   return {
     start() {
       if (!deps.isAutoSyncEnabled()) return;
-      unsubscribe = deps.subscribeVaultEvents(() => {
-        // event handling added in later tasks
-      });
+      unsubscribe = deps.subscribeVaultEvents(recordEvent);
       emitStatus({ kind: 'idle', lastSyncAt: null });
     },
     stop() {

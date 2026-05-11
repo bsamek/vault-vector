@@ -45,3 +45,40 @@ describe('AutoSync lifecycle', () => {
     expect(deps.subscribeVaultEvents).not.toHaveBeenCalled();
   });
 });
+
+describe('AutoSync pending set', () => {
+  it('records distinct upsert ops by path', () => {
+    let onEvent: ((e: any) => void) | null = null;
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent!({ kind: 'modify', path: 'a.md' });
+    onEvent!({ kind: 'modify', path: 'b.md' });
+    expect(ctl.getStatus()).toMatchObject({ kind: 'pending', pendingCount: 2 });
+  });
+
+  it('coalesces repeated modifies on the same path', () => {
+    let onEvent: ((e: any) => void) | null = null;
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    for (let i = 0; i < 10; i++) onEvent!({ kind: 'modify', path: 'a.md' });
+    expect(ctl.getStatus()).toMatchObject({ kind: 'pending', pendingCount: 1 });
+  });
+
+  it('a delete after a modify replaces the upsert with a delete', () => {
+    let onEvent: ((e: any) => void) | null = null;
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent!({ kind: 'modify', path: 'a.md' });
+    onEvent!({ kind: 'delete', path: 'a.md' });
+    expect(ctl.getStatus()).toMatchObject({ kind: 'pending', pendingCount: 1 });
+  });
+});
