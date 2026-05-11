@@ -21,11 +21,12 @@ import { type NoteInput, runLocalSync, runSync } from './sync';
 import {
   executeLocalSearch,
   executeSearch,
+  type RerankConfig,
   type SearchFn,
   type SearchHit,
   VaultVectorSearchModal,
 } from './search';
-import { createVoyageClient, type VoyageClient } from './voyage';
+import { createVoyageClient, createVoyageReranker, type VoyageClient, type VoyageReranker } from './voyage';
 
 const realConnector: Connector = async (uri) => {
   const client = new MongoClient(uri);
@@ -38,6 +39,7 @@ export default class VaultVectorPlugin extends Plugin {
   private atlas: AtlasFactory | null = null;
   private localStore: LocalStore | null = null;
   private voyage: VoyageClient | null = null;
+  private reranker: VoyageReranker | null = null;
 
   async onload(): Promise<void> {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -63,6 +65,7 @@ export default class VaultVectorPlugin extends Plugin {
     }
     this.localStore = null;
     this.voyage = null;
+    this.reranker = null;
   }
 
   async saveSettings(): Promise<void> {
@@ -73,6 +76,7 @@ export default class VaultVectorPlugin extends Plugin {
     }
     this.localStore = null;
     this.voyage = null;
+    this.reranker = null;
   }
 
   private getAtlas(): AtlasFactory {
@@ -114,6 +118,16 @@ export default class VaultVectorPlugin extends Plugin {
       });
     }
     return this.voyage;
+  }
+
+  private getReranker(): VoyageReranker {
+    if (!this.reranker) {
+      this.reranker = createVoyageReranker({
+        apiKey: this.settings.voyageApiKey,
+        model: this.settings.rerankModel,
+      });
+    }
+    return this.reranker;
   }
 
   private async collectInputs(): Promise<NoteInput[]> {
@@ -177,6 +191,15 @@ export default class VaultVectorPlugin extends Plugin {
   private async openSearchModal(): Promise<void> {
     const onPick = (path: string) => this.app.workspace.openLinkText(path, '', false);
 
+    if (this.settings.rerankEnabled && !this.settings.voyageApiKey.trim()) {
+      new Notice('Reranking is enabled but Voyage API key is missing. Configure it in Settings.');
+      return;
+    }
+
+    const rerankCfg: RerankConfig | undefined = this.settings.rerankEnabled
+      ? { reranker: this.getReranker(), instruction: this.settings.rerankInstruction }
+      : undefined;
+
     if (this.settings.embeddingProvider === 'voyage-local') {
       if (!this.settings.voyageApiKey.trim()) {
         new Notice('Configure Voyage API key in Settings.');
@@ -192,8 +215,18 @@ export default class VaultVectorPlugin extends Plugin {
         new Notice(`Local cache load failed: ${detail}`);
         return;
       }
-      const search: SearchFn = (query) =>
-        executeLocalSearch(voyage, store, query, this.settings.resultLimit);
+      const limit = this.settings.resultLimit;
+      const search: SearchFn = rerankCfg
+        ? async (query) => {
+            try {
+              return await executeLocalSearch(voyage, store, query, limit, rerankCfg);
+            } catch (err) {
+              console.error('Vault Vector rerank failed', err);
+              new Notice('Rerank failed, showing vector results.');
+              return executeLocalSearch(voyage, store, query, limit);
+            }
+          }
+        : (query) => executeLocalSearch(voyage, store, query, limit);
       new VaultVectorSearchModal(this.app, search, onPick).open();
       return;
     }
@@ -205,12 +238,23 @@ export default class VaultVectorPlugin extends Plugin {
 
     try {
       const collection = await this.getAtlas().getCollection();
-      const search: SearchFn = (query) =>
-        executeSearch(collection, {
-          index: this.settings.indexName,
-          query,
-          limit: this.settings.resultLimit,
-        });
+      const limit = this.settings.resultLimit;
+      const indexName = this.settings.indexName;
+      const search: SearchFn = rerankCfg
+        ? async (query) => {
+            try {
+              return await executeSearch(
+                collection,
+                { index: indexName, query, limit },
+                rerankCfg
+              );
+            } catch (err) {
+              console.error('Vault Vector rerank failed', err);
+              new Notice('Rerank failed, showing vector results.');
+              return executeSearch(collection, { index: indexName, query, limit });
+            }
+          }
+        : (query) => executeSearch(collection, { index: indexName, query, limit });
       new VaultVectorSearchModal(this.app, search, onPick).open();
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
