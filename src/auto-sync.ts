@@ -40,6 +40,10 @@ export interface AutoSync {
   getStatus(): AutoSyncStatus;
 }
 
+const DEBOUNCE_MS = 8000;
+const SIZE_CAP = 25;
+const AGE_CAP_MS = 60_000;
+
 export function createAutoSync(deps: AutoSyncDeps): AutoSync {
   let unsubscribe: (() => void) | null = null;
   let status: AutoSyncStatus = { kind: 'idle', lastSyncAt: null };
@@ -51,6 +55,32 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
 
   const pending = new Map<string, AutoSyncOp>();
   let oldestPendingAt: number | null = null;
+  let debounceTimer: number | null = null;
+
+  function scheduleFlush(): void {
+    if (debounceTimer !== null) deps.clearTimer(debounceTimer);
+    debounceTimer = deps.setTimer(() => {
+      debounceTimer = null;
+      void runFlush();
+    }, DEBOUNCE_MS);
+  }
+
+  function maybeForceFlush(): boolean {
+    if (pending.size >= SIZE_CAP) return true;
+    if (oldestPendingAt !== null && deps.now() - oldestPendingAt >= AGE_CAP_MS) return true;
+    return false;
+  }
+
+  async function runFlush(): Promise<void> {
+    if (pending.size === 0) return;
+    try {
+      await deps.runFullSync();
+      pending.clear();
+      oldestPendingAt = null;
+    } catch {
+      // proper error handling in Task 10
+    }
+  }
 
   function recordEvent(e: AutoSyncEvent): void {
     if (e.kind === 'rename') {
@@ -62,6 +92,12 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
     }
     if (oldestPendingAt === null) oldestPendingAt = deps.now();
     emitStatus({ kind: 'pending', pendingCount: pending.size });
+    if (maybeForceFlush()) {
+      if (debounceTimer !== null) { deps.clearTimer(debounceTimer); debounceTimer = null; }
+      void runFlush();
+    } else {
+      scheduleFlush();
+    }
   }
 
   return {
