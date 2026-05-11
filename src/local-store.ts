@@ -16,6 +16,7 @@ export interface LocalStore {
   diff(inputs: NoteInput[]): LocalDiff;
   upsert(path: string, entry: LocalStoreEntry): void;
   remove(paths: string[]): void;
+  renameEntry(oldPath: string, newPath: string): boolean;
   size(): number;
   all(): Array<{ path: string; entry: LocalStoreEntry }>;
 }
@@ -80,6 +81,14 @@ export function createLocalStore(opts: {
 
     remove(paths) {
       for (const p of paths) entries.delete(p);
+    },
+
+    renameEntry(oldPath, newPath) {
+      const entry = entries.get(oldPath);
+      if (!entry) return false;
+      entries.delete(oldPath);
+      entries.set(newPath, entry);
+      return true;
     },
 
     size() {

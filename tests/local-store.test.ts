@@ -151,3 +151,47 @@ describe('createLocalStore.remove', () => {
     expect(store.all()[0].path).toBe('b.md');
   });
 });
+
+describe('createLocalStore.renameEntry', () => {
+  it('moves an entry from oldPath to newPath, returns true, preserves mtime/embedding/content', async () => {
+    const adapter = new MemoryAdapter();
+    const store = createLocalStore({ adapter, path: 'cache.json', model: 'voyage-4' });
+    await store.load();
+    store.upsert('old.md', { mtime: 42, embedding: [0.1, 0.2], content: 'hello' });
+
+    const result = store.renameEntry('old.md', 'new.md');
+
+    expect(result).toBe(true);
+    expect(store.size()).toBe(1);
+    const all = store.all();
+    expect(all[0].path).toBe('new.md');
+    expect(all[0].entry).toEqual({ mtime: 42, embedding: [0.1, 0.2], content: 'hello' });
+  });
+
+  it('returns false when oldPath is absent, store size stays 0', async () => {
+    const adapter = new MemoryAdapter();
+    const store = createLocalStore({ adapter, path: 'cache.json', model: 'voyage-4' });
+    await store.load();
+
+    const result = store.renameEntry('missing.md', 'new.md');
+
+    expect(result).toBe(false);
+    expect(store.size()).toBe(0);
+  });
+
+  it('overwrites newPath if it already exists, single entry remains with source content', async () => {
+    const adapter = new MemoryAdapter();
+    const store = createLocalStore({ adapter, path: 'cache.json', model: 'voyage-4' });
+    await store.load();
+    store.upsert('old.md', { mtime: 10, embedding: [1.0], content: 'source' });
+    store.upsert('new.md', { mtime: 99, embedding: [9.9], content: 'target' });
+
+    const result = store.renameEntry('old.md', 'new.md');
+
+    expect(result).toBe(true);
+    expect(store.size()).toBe(1);
+    const all = store.all();
+    expect(all[0].path).toBe('new.md');
+    expect(all[0].entry).toEqual({ mtime: 10, embedding: [1.0], content: 'source' });
+  });
+});
