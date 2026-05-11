@@ -2,7 +2,7 @@ import type { CollectionLike } from './atlas';
 import { App, SuggestModal } from 'obsidian';
 import type { LocalStore } from './local-store';
 import { searchLocalStore } from './local-search';
-import type { VoyageClient } from './voyage';
+import type { VoyageClient, VoyageReranker } from './voyage';
 
 export const RERANK_CANDIDATE_MULTIPLIER = 5;
 export const RERANK_CANDIDATE_CAP = 50;
@@ -69,6 +69,27 @@ export async function executeLocalSearch(
   if (!query.trim()) return [];
   const [queryEmbedding] = await voyage.embed([query], 'query');
   return searchLocalStore(store, queryEmbedding, limit);
+}
+
+export interface RerankConfig {
+  reranker: VoyageReranker;
+  instruction: string;
+}
+
+export async function applyRerank(
+  hits: SearchHit[],
+  query: string,
+  cfg: RerankConfig
+): Promise<SearchHit[]> {
+  if (hits.length === 0) return [];
+  const trimmed = cfg.instruction.trim();
+  const effectiveQuery = trimmed ? `${trimmed}\n\n${query}` : query;
+  const documents = hits.map(h => h.content);
+  const results = await cfg.reranker.rerank(effectiveQuery, documents, hits.length);
+  return results.map(r => ({
+    ...hits[r.index],
+    score: r.relevanceScore,
+  }));
 }
 
 export type SearchFn = (query: string) => Promise<SearchHit[]>;

@@ -5,10 +5,12 @@ import {
   executeSearch,
   executeLocalSearch,
   candidateCount,
+  applyRerank,
+  type RerankConfig,
 } from '../src/search';
 import { FakeCollection } from './fakes/collection';
 import { createLocalStore, type FileAdapter } from '../src/local-store';
-import type { VoyageClient, VoyageInputType } from '../src/voyage';
+import type { VoyageClient, VoyageInputType, VoyageReranker } from '../src/voyage';
 
 class MemoryAdapter implements FileAdapter {
   files = new Map<string, string>();
@@ -135,5 +137,78 @@ describe('candidateCount', () => {
     expect(candidateCount(10)).toBe(50);
     expect(candidateCount(11)).toBe(50);
     expect(candidateCount(100)).toBe(50);
+  });
+});
+
+describe('applyRerank', () => {
+  const hits = [
+    { path: 'a.md', snippet: 'aa', content: 'aaa', score: 0.9 },
+    { path: 'b.md', snippet: 'bb', content: 'bbb', score: 0.8 },
+    { path: 'c.md', snippet: 'cc', content: 'ccc', score: 0.7 },
+  ];
+
+  it('reorders hits by reranker response and replaces score with relevanceScore', async () => {
+    const reranker: VoyageReranker = {
+      async rerank() {
+        return [
+          { index: 2, relevanceScore: 0.99 },
+          { index: 0, relevanceScore: 0.55 },
+          { index: 1, relevanceScore: 0.10 },
+        ];
+      },
+    };
+    const cfg: RerankConfig = { reranker, instruction: '' };
+
+    const out = await applyRerank(hits, 'find', cfg);
+
+    expect(out.map(h => h.path)).toEqual(['c.md', 'a.md', 'b.md']);
+    expect(out[0].score).toBe(0.99);
+    expect(out[1].score).toBe(0.55);
+    expect(out[2].score).toBe(0.10);
+  });
+
+  it('passes the bare query when instruction is empty', async () => {
+    let received = '';
+    const reranker: VoyageReranker = {
+      async rerank(query, documents) {
+        received = query;
+        return documents.map((_, i) => ({ index: i, relevanceScore: 1 - i * 0.1 }));
+      },
+    };
+    await applyRerank(hits, 'plain query', { reranker, instruction: '' });
+    expect(received).toBe('plain query');
+  });
+
+  it('prepends the trimmed instruction to the query when present', async () => {
+    let received = '';
+    const reranker: VoyageReranker = {
+      async rerank(query, documents) {
+        received = query;
+        return documents.map((_, i) => ({ index: i, relevanceScore: 1 - i * 0.1 }));
+      },
+    };
+    await applyRerank(hits, 'plain query', {
+      reranker,
+      instruction: '  Prefer how-to.  ',
+    });
+    expect(received).toBe('Prefer how-to.\n\nplain query');
+  });
+
+  it('returns [] for empty hits without calling the reranker', async () => {
+    const reranker: VoyageReranker = {
+      rerank: vi.fn(async () => []),
+    };
+    const out = await applyRerank([], 'q', { reranker, instruction: '' });
+    expect(out).toEqual([]);
+    expect(reranker.rerank).not.toHaveBeenCalled();
+  });
+
+  it('propagates reranker errors to the caller', async () => {
+    const reranker: VoyageReranker = {
+      async rerank() { throw new Error('boom'); },
+    };
+    await expect(
+      applyRerank(hits, 'q', { reranker, instruction: '' })
+    ).rejects.toThrow('boom');
   });
 });
