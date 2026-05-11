@@ -1,4 +1,6 @@
 import type { CollectionLike } from './atlas';
+import type { LocalStore } from './local-store';
+import type { VoyageClient } from './voyage';
 
 export type NoteInput = { path: string; content: string; mtime: number };
 
@@ -51,4 +53,41 @@ export async function runSync(
   }
 
   return { upserted, deleted, rejected };
+}
+
+export async function runLocalSync(
+  vaultFiles: NoteInput[],
+  store: LocalStore,
+  voyage: VoyageClient,
+  opts: { chunkSize?: number } = {}
+): Promise<SyncResult> {
+  const chunkSize = opts.chunkSize ?? 32;
+  const diff = store.diff(vaultFiles);
+
+  const rejected: string[] = [];
+  let upserted = 0;
+
+  for (let i = 0; i < diff.toEmbed.length; i += chunkSize) {
+    const chunk = diff.toEmbed.slice(i, i + chunkSize);
+    try {
+      const embeddings = await voyage.embed(chunk.map(n => n.content), 'document');
+      for (let j = 0; j < chunk.length; j++) {
+        const note = chunk[j];
+        store.upsert(note.path, {
+          mtime: note.mtime,
+          embedding: embeddings[j],
+          content: note.content,
+        });
+        upserted++;
+      }
+    } catch (err) {
+      for (const note of chunk) rejected.push(note.path);
+      console.error('Vault Vector local sync: chunk rejected', err);
+    }
+  }
+
+  store.remove(diff.toDelete);
+  await store.save();
+
+  return { upserted, deleted: diff.toDelete.length, rejected };
 }
