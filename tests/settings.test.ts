@@ -31,8 +31,8 @@ describe('DEFAULT_SETTINGS', () => {
     expect(DEFAULT_SETTINGS.uri).toBe('');
   });
 
-  it('defaults to atlas-auto provider for backward compatibility', () => {
-    expect(DEFAULT_SETTINGS.embeddingProvider).toBe('atlas-auto');
+  it('defaults to voyage-local provider (easier setup than Atlas)', () => {
+    expect(DEFAULT_SETTINGS.embeddingProvider).toBe('voyage-local');
   });
 
   it('defaults voyage credentials to empty and model to voyage-4', () => {

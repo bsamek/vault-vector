@@ -26,7 +26,7 @@ export const DEFAULT_SETTINGS: VaultVectorSettings = {
   collection: 'notes',
   indexName: 'vault_vector',
   resultLimit: 10,
-  embeddingProvider: 'atlas-auto',
+  embeddingProvider: 'voyage-local',
   voyageApiKey: '',
   voyageModel: 'voyage-4',
   rerankEnabled: false,
@@ -66,11 +66,11 @@ export class VaultVectorSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Embedding provider')
-      .setDesc('Atlas auto-embed uses MongoDB to generate and search embeddings server-side. Voyage direct calls Voyage AI and stores vectors locally.')
+      .setDesc('Voyage direct calls Voyage AI and stores vectors locally (just needs an API key). Atlas auto-embed uses MongoDB to generate and search embeddings server-side (requires a configured Atlas cluster and vector index).')
       .addDropdown(drop =>
         drop
-          .addOption('atlas-auto', 'Atlas auto-embed')
           .addOption('voyage-local', 'Voyage direct (local)')
+          .addOption('atlas-auto', 'Atlas auto-embed')
           .setValue(this.plugin.settings.embeddingProvider)
           .onChange(async (value: string) => {
             this.plugin.settings.embeddingProvider = value as EmbeddingProvider;
@@ -79,73 +79,79 @@ export class VaultVectorSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl)
-      .setName('Connection URI')
-      .setDesc('MongoDB Atlas connection string (mongodb+srv://...). Used only in Atlas auto-embed mode.')
-      .addText(text =>
-        text
-          .setPlaceholder('mongodb+srv://user:pass@cluster/...')
-          .setValue(this.plugin.settings.uri)
-          .onChange(async (value: string) => {
-            this.plugin.settings.uri = value.trim();
+    if (this.plugin.settings.embeddingProvider === 'voyage-local') {
+      containerEl.createEl('h3', { text: 'Voyage direct (local)' });
+
+      new Setting(containerEl)
+        .setName('Voyage API key')
+        .setDesc('Your Voyage AI API key.')
+        .addText(text => {
+          text
+            .setPlaceholder('pa-...')
+            .setValue(this.plugin.settings.voyageApiKey)
+            .onChange(async (value: string) => {
+              this.plugin.settings.voyageApiKey = value.trim();
+              await this.plugin.saveSettings();
+              this.display();
+            });
+          (text.inputEl as HTMLInputElement).type = 'password';
+        });
+
+      new Setting(containerEl)
+        .setName('Voyage model')
+        .setDesc('Voyage embedding model. Changing this invalidates the local cache on next sync.')
+        .addText(text =>
+          text.setValue(this.plugin.settings.voyageModel).onChange(async (value: string) => {
+            this.plugin.settings.voyageModel = value.trim();
             await this.plugin.saveSettings();
           })
-      );
+        );
+    } else {
+      containerEl.createEl('h3', { text: 'Atlas auto-embed' });
 
-    new Setting(containerEl)
-      .setName('Database')
-      .setDesc('Atlas database name')
-      .addText(text =>
-        text.setValue(this.plugin.settings.database).onChange(async (value: string) => {
-          this.plugin.settings.database = value.trim();
-          await this.plugin.saveSettings();
-        })
-      );
+      new Setting(containerEl)
+        .setName('Connection URI')
+        .setDesc('MongoDB Atlas connection string (mongodb+srv://...).')
+        .addText(text =>
+          text
+            .setPlaceholder('mongodb+srv://user:pass@cluster/...')
+            .setValue(this.plugin.settings.uri)
+            .onChange(async (value: string) => {
+              this.plugin.settings.uri = value.trim();
+              await this.plugin.saveSettings();
+            })
+        );
 
-    new Setting(containerEl)
-      .setName('Collection')
-      .setDesc('Atlas collection name')
-      .addText(text =>
-        text.setValue(this.plugin.settings.collection).onChange(async (value: string) => {
-          this.plugin.settings.collection = value.trim();
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName('Index name')
-      .setDesc('Vector Search index name (must match Atlas)')
-      .addText(text =>
-        text.setValue(this.plugin.settings.indexName).onChange(async (value: string) => {
-          this.plugin.settings.indexName = value.trim();
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName('Voyage API key')
-      .setDesc('Voyage AI API key. Used only in Voyage direct mode.')
-      .addText(text => {
-        text
-          .setPlaceholder('pa-...')
-          .setValue(this.plugin.settings.voyageApiKey)
-          .onChange(async (value: string) => {
-            this.plugin.settings.voyageApiKey = value.trim();
+      new Setting(containerEl)
+        .setName('Database')
+        .setDesc('Atlas database name')
+        .addText(text =>
+          text.setValue(this.plugin.settings.database).onChange(async (value: string) => {
+            this.plugin.settings.database = value.trim();
             await this.plugin.saveSettings();
-            this.display();
-          });
-        (text.inputEl as HTMLInputElement).type = 'password';
-      });
+          })
+        );
 
-    new Setting(containerEl)
-      .setName('Voyage model')
-      .setDesc('Voyage embedding model. Changing this invalidates the local cache on next sync.')
-      .addText(text =>
-        text.setValue(this.plugin.settings.voyageModel).onChange(async (value: string) => {
-          this.plugin.settings.voyageModel = value.trim();
-          await this.plugin.saveSettings();
-        })
-      );
+      new Setting(containerEl)
+        .setName('Collection')
+        .setDesc('Atlas collection name')
+        .addText(text =>
+          text.setValue(this.plugin.settings.collection).onChange(async (value: string) => {
+            this.plugin.settings.collection = value.trim();
+            await this.plugin.saveSettings();
+          })
+        );
+
+      new Setting(containerEl)
+        .setName('Index name')
+        .setDesc('Vector Search index name (must match Atlas)')
+        .addText(text =>
+          text.setValue(this.plugin.settings.indexName).onChange(async (value: string) => {
+            this.plugin.settings.indexName = value.trim();
+            await this.plugin.saveSettings();
+          })
+        );
+    }
 
     new Setting(containerEl)
       .setName('Result limit')
@@ -175,9 +181,29 @@ export class VaultVectorSettingTab extends PluginSettingTab {
           })
       );
 
+    if (
+      this.plugin.settings.rerankEnabled &&
+      this.plugin.settings.embeddingProvider === 'atlas-auto'
+    ) {
+      new Setting(containerEl)
+        .setName('Voyage API key')
+        .setDesc('Required for reranking, even when Atlas auto-embed is the provider.')
+        .addText(text => {
+          text
+            .setPlaceholder('pa-...')
+            .setValue(this.plugin.settings.voyageApiKey)
+            .onChange(async (value: string) => {
+              this.plugin.settings.voyageApiKey = value.trim();
+              await this.plugin.saveSettings();
+              this.display();
+            });
+          (text.inputEl as HTMLInputElement).type = 'password';
+        });
+    }
+
     if (this.plugin.settings.rerankEnabled && !this.plugin.settings.voyageApiKey.trim()) {
       const warn = containerEl.createEl('div', {
-        text: 'Reranking requires a Voyage API key (set above).',
+        text: 'Reranking requires a Voyage API key.',
       });
       warn.style.color = 'var(--text-error)';
       warn.style.marginBottom = '0.75em';

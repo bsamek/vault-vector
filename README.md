@@ -2,21 +2,21 @@
 
 Semantic search across your Obsidian vault. Two backends:
 
-- **Atlas auto-embed** — MongoDB Atlas owns the embeddings and runs `$vectorSearch` server-side.
-- **Voyage direct (local)** — the plugin calls Voyage AI itself, stores embeddings in a local JSON cache, and ranks by brute-force cosine similarity in-process.
+- **Voyage direct (local)** — default. The plugin calls Voyage AI itself, stores embeddings in a local JSON cache, and ranks by brute-force cosine similarity in-process. Just needs an API key.
+- **Atlas auto-embed** — MongoDB Atlas owns the embeddings and runs `$vectorSearch` server-side. Requires a configured Atlas cluster and vector index.
 
 See [`docs/architecture.html`](docs/architecture.html) for a visual walkthrough of both modes.
 
 ## Which mode should I use?
 
-| | Atlas auto-embed | Voyage direct (local) |
+| | Voyage direct (local) | Atlas auto-embed |
 |---|---|---|
-| Where embeddings live | Atlas collection | Local JSON file under the plugin folder |
-| Who calls Voyage | Atlas (under the hood) | The plugin, with your API key |
-| Network dependency | Atlas cluster | api.voyageai.com |
-| Search algorithm | Atlas `$vectorSearch` (ANN) | Brute-force cosine in-process |
-| Setup | Atlas cluster + vector index | Voyage API key |
-| Good fit | You already run Atlas, or want server-side search | You don't want to host a cluster; vaults up to a few thousand notes |
+| Where embeddings live | Local JSON file under the plugin folder | Atlas collection |
+| Who calls Voyage | The plugin, with your API key | Atlas (under the hood) |
+| Network dependency | api.voyageai.com | Atlas cluster |
+| Search algorithm | Brute-force cosine in-process | Atlas `$vectorSearch` (ANN) |
+| Setup | Voyage API key | Atlas cluster + vector index |
+| Good fit | You don't want to host a cluster; vaults up to a few thousand notes | You already run Atlas, or want server-side search |
 
 Both modes coexist behind a settings toggle. You can switch freely.
 
@@ -54,7 +54,15 @@ After either option: in Obsidian, Settings → Community plugins → Reload, the
 
 In **Settings → Vault Vector**:
 
-- **Embedding provider** — `Atlas auto-embed` or `Voyage direct (local)`.
+- **Embedding provider** — `Voyage direct (local)` (default) or `Atlas auto-embed`. Only the selected provider's fields are shown.
+
+### Voyage direct (local) — default
+
+- **Voyage API key** — your Voyage AI API key.
+- **Voyage model** — default `voyage-4`. Changing this wipes the local cache on next sync.
+- **Result limit** — default `10`.
+
+The local cache lives at `<vault>/.obsidian/plugins/vault-vector/embeddings.json`.
 
 ### Atlas auto-embed
 
@@ -81,14 +89,6 @@ One-time Atlas setup:
 
    To use a different Voyage model, change the `model` value and recreate the index.
 
-### Voyage direct (local)
-
-- **Voyage API key** — your Voyage AI API key.
-- **Voyage model** — default `voyage-4`. Changing this wipes the local cache on next sync.
-- **Result limit** — default `10`.
-
-The local cache lives at `<vault>/.obsidian/plugins/vault-vector/embeddings.json`.
-
 ### Reranking (optional)
 
 Reranking applies to both modes. When enabled, the plugin over-fetches candidates from the active backend (5× **Result limit**, capped at 50), sends them to Voyage's `/v1/rerank` endpoint, and returns the reordered top results. Most of the gain comes from promoting notes the embedding model ranked 11-50 into the top slots.
@@ -97,7 +97,7 @@ Reranking applies to both modes. When enabled, the plugin over-fetches candidate
 - **Rerank model** — `rerank-2.5-lite` (faster) or `rerank-2.5` (more accurate). Default `rerank-2.5-lite`.
 - **Rerank instruction (optional)** — free-form text prepended to the query, e.g. _"Prefer notes that explain why over notes that list how."_
 
-Reranking always calls Voyage, even in Atlas mode, so the **Voyage API key** field must be set. Settings shows an inline warning when the toggle is on without a key. If a rerank call fails at search time, the modal falls back to vector-ordered results and shows a Notice.
+Reranking always calls Voyage, even in Atlas mode. In Atlas mode the **Voyage API key** field appears inside the Reranking section once the toggle is on. Settings shows an inline warning if the toggle is on without a key. If a rerank call fails at search time, the modal falls back to vector-ordered results and shows a Notice.
 
 ## Use
 
