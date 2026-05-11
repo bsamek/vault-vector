@@ -26,3 +26,27 @@ export interface AtlasFactory {
   getCollection(): Promise<CollectionLike>;
   close(): Promise<void>;
 }
+
+import type { VaultVectorSettings } from './settings';
+
+export function createAtlasFactory(
+  settings: VaultVectorSettings,
+  connect: Connector
+): AtlasFactory {
+  let client: MongoClientLike | null = null;
+
+  return {
+    async getCollection(): Promise<CollectionLike> {
+      if (!client) {
+        client = await connect(settings.uri);
+      }
+      return client.db(settings.database).collection(settings.collection);
+    },
+    async close(): Promise<void> {
+      if (client) {
+        await client.close();
+        client = null;
+      }
+    },
+  };
+}
