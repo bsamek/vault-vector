@@ -1,4 +1,6 @@
 import type { CollectionLike } from './atlas';
+import { App, SuggestModal } from 'obsidian';
+import type { VaultVectorSettings } from './settings';
 
 export function renderSnippet(content: string, maxChars: number = 200): string {
   const cleaned = content.trim().replace(/\s+/g, ' ');
@@ -46,4 +48,45 @@ export async function executeSearch(
     snippet: renderSnippet(String(d.content)),
     score: typeof d.score === 'number' ? d.score : 0,
   }));
+}
+
+export class VaultVectorSearchModal extends SuggestModal<SearchHit> {
+  private readonly collection: CollectionLike;
+  private readonly settings: VaultVectorSettings;
+  private readonly onPick: (path: string) => void;
+
+  constructor(
+    app: App,
+    settings: VaultVectorSettings,
+    collection: CollectionLike,
+    onPick: (path: string) => void
+  ) {
+    super(app);
+    this.settings = settings;
+    this.collection = collection;
+    this.onPick = onPick;
+    this.setPlaceholder('Search your vault semantically…');
+  }
+
+  async getSuggestions(query: string): Promise<SearchHit[]> {
+    try {
+      return await executeSearch(this.collection, {
+        index: this.settings.indexName,
+        query,
+        limit: this.settings.resultLimit,
+      });
+    } catch (err) {
+      console.error('Vault Vector search failed', err);
+      return [];
+    }
+  }
+
+  renderSuggestion(hit: SearchHit, el: HTMLElement): void {
+    el.createEl('div', { text: hit.path });
+    el.createEl('small', { text: hit.snippet });
+  }
+
+  onChooseSuggestion(hit: SearchHit): void {
+    this.onPick(hit.path);
+  }
 }
