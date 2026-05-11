@@ -1,0 +1,460 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createAutoSync, type AutoSyncDeps } from '../src/auto-sync';
+import { createLocalStore } from '../src/local-store';
+import { runLocalSync, type NoteInput } from '../src/sync';
+
+function fakeDeps(over: Partial<AutoSyncDeps> = {}): AutoSyncDeps {
+  const subscribe = vi.fn(() => () => {});
+  return {
+    subscribeVaultEvents: subscribe,
+    runFullSync: vi.fn(async () => ({ upserted: 0, deleted: 0, rejected: [] })),
+    renameLocal: vi.fn(() => false),
+    isAutoSyncEnabled: () => true,
+    isLocalProvider: () => true,
+    now: () => 0,
+    setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+    clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+    setInterval: (cb, ms) => setInterval(cb, ms) as unknown as number,
+    clearInterval: (id) => clearInterval(id as unknown as NodeJS.Timeout),
+    updateStatus: vi.fn(),
+    notice: vi.fn(),
+    logError: vi.fn(),
+    ...over,
+  };
+}
+
+describe('AutoSync lifecycle', () => {
+  it('subscribes to vault events on start', () => {
+    const deps = fakeDeps();
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    expect(deps.subscribeVaultEvents).toHaveBeenCalledOnce();
+  });
+
+  it('calls the unsubscribe returned by subscribe on stop', () => {
+    const unsub = vi.fn();
+    const deps = fakeDeps({ subscribeVaultEvents: vi.fn(() => unsub) });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    ctl.stop();
+    expect(unsub).toHaveBeenCalledOnce();
+  });
+
+  it('does not subscribe when autoSyncEnabled is false', () => {
+    const deps = fakeDeps({ isAutoSyncEnabled: () => false });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    expect(deps.subscribeVaultEvents).not.toHaveBeenCalled();
+  });
+
+  it('stop() prevents a queued debounce flush from firing', async () => {
+    vi.useFakeTimers();
+    let onEvent: any = null;
+    const runFullSync = vi.fn(async () => ({ upserted: 1, deleted: 0, rejected: [] }));
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync,
+      // Suppress the catch-up timer so only the debounce fires
+      setTimer: (cb, ms) => ms === 5000 ? 0 : setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'modify', path: 'a.md' });
+    // Debounce timer is now running (8s). Stop before it fires.
+    ctl.stop();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(runFullSync).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+});
+
+describe('AutoSync pending set', () => {
+  it('records distinct upsert ops by path', () => {
+    let onEvent: ((e: any) => void) | null = null;
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent!({ kind: 'modify', path: 'a.md' });
+    onEvent!({ kind: 'modify', path: 'b.md' });
+    expect(ctl.getStatus()).toMatchObject({ kind: 'pending', pendingCount: 2 });
+  });
+
+  it('coalesces repeated modifies on the same path', () => {
+    let onEvent: ((e: any) => void) | null = null;
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    for (let i = 0; i < 10; i++) onEvent!({ kind: 'modify', path: 'a.md' });
+    expect(ctl.getStatus()).toMatchObject({ kind: 'pending', pendingCount: 1 });
+  });
+
+  it('a delete after a modify replaces the upsert with a delete', () => {
+    let onEvent: ((e: any) => void) | null = null;
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent!({ kind: 'modify', path: 'a.md' });
+    onEvent!({ kind: 'delete', path: 'a.md' });
+    expect(ctl.getStatus()).toMatchObject({ kind: 'pending', pendingCount: 1 });
+  });
+});
+
+describe('AutoSync flush triggers', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('flushes after 8s of idle', async () => {
+    // Suppress the catch-up timer (5000 ms) so the test can isolate the 8s
+    // debounce without the catch-up sweep firing in the middle of the window.
+    let onEvent: any = null;
+    const runFullSync = vi.fn(async () => ({ upserted: 1, deleted: 0, rejected: [] }));
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync,
+      setTimer: (cb, ms) => ms === 5000 ? 0 : setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'modify', path: 'a.md' });
+    await vi.advanceTimersByTimeAsync(7999);
+    expect(runFullSync).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2);
+    expect(runFullSync).toHaveBeenCalledOnce();
+  });
+
+  it('resets debounce on each event', async () => {
+    // Suppress the catch-up timer (5000 ms) so this test can focus solely on
+    // debounce-reset behaviour without the catch-up sweep firing mid-test.
+    let onEvent: any = null;
+    const runFullSync = vi.fn(async () => ({ upserted: 1, deleted: 0, rejected: [] }));
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync,
+      setTimer: (cb, ms) => ms === 5000 ? 0 : setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'modify', path: 'a.md' });
+    await vi.advanceTimersByTimeAsync(5000);
+    onEvent({ kind: 'modify', path: 'b.md' });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(runFullSync).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(3001);
+    expect(runFullSync).toHaveBeenCalledOnce();
+  });
+
+  it('flushes immediately when size cap is hit', async () => {
+    let onEvent: any = null;
+    const runFullSync = vi.fn(async () => ({ upserted: 25, deleted: 0, rejected: [] }));
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync,
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    for (let i = 0; i < 25; i++) onEvent({ kind: 'modify', path: `f${i}.md` });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runFullSync).toHaveBeenCalledOnce();
+  });
+
+  it('flushes when oldest pending op exceeds age cap', async () => {
+    let onEvent: any = null;
+    const runFullSync = vi.fn(async () => ({ upserted: 1, deleted: 0, rejected: [] }));
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync,
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    for (let i = 0; i < 13; i++) {
+      onEvent({ kind: 'modify', path: `f${i}.md` });
+      await vi.advanceTimersByTimeAsync(5000);
+    }
+    expect(runFullSync).toHaveBeenCalled();
+  });
+});
+
+describe('AutoSync rename handling', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('calls renameLocal on rename event in local mode', () => {
+    let onEvent: any = null;
+    const renameLocal = vi.fn(() => true);
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      renameLocal,
+      isLocalProvider: () => true,
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'rename', oldPath: 'a.md', newPath: 'b.md' });
+    expect(renameLocal).toHaveBeenCalledWith('a.md', 'b.md');
+  });
+
+  it('does not call renameLocal in atlas mode', () => {
+    let onEvent: any = null;
+    const renameLocal = vi.fn(() => true);
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      renameLocal,
+      isLocalProvider: () => false,
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'rename', oldPath: 'a.md', newPath: 'b.md' });
+    expect(renameLocal).not.toHaveBeenCalled();
+  });
+});
+
+describe('AutoSync flush execution', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('clears pending and reports idle on success', async () => {
+    let onEvent: any = null;
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync: vi.fn(async () => ({ upserted: 1, deleted: 0, rejected: [] })),
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'modify', path: 'a.md' });
+    await vi.advanceTimersByTimeAsync(8001);
+    expect(ctl.getStatus().kind).toBe('idle');
+  });
+
+  it('retains pending and reports error on failure', async () => {
+    let onEvent: any = null;
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync: vi.fn(async () => { throw new Error('boom'); }),
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'modify', path: 'a.md' });
+    await vi.advanceTimersByTimeAsync(8001);
+    expect(ctl.getStatus().kind).toBe('error');
+  });
+
+  it('does not run runFullSync when pending is empty and no sweep requested', async () => {
+    // This test validates runFlush() short-circuits when nothing is pending
+    // and sweepRequested is false. But flushNow() itself sets sweepRequested=true,
+    // so use the internal path by triggering via the debounce instead.
+    let onEvent: any = null;
+    const runFullSync = vi.fn(async () => ({ upserted: 0, deleted: 0, rejected: [] }));
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync,
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    // No events; advancing past the catch-up timer triggers a sweep (sweepRequested=true)
+    // but let's verify the internal runFlush won't double-run on an empty set after a flush
+    await vi.advanceTimersByTimeAsync(5001); // catch-up sweep fires
+    expect(runFullSync).toHaveBeenCalledTimes(1);
+    // No more timers pending; a second call via debounce won't fire without events
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(runFullSync).toHaveBeenCalledTimes(1); // still just 1
+  });
+
+  it('flushNow() triggers runFullSync even when pending is empty', async () => {
+    const runFullSync = vi.fn(async () => ({ upserted: 0, deleted: 0, rejected: [] }));
+    const deps = fakeDeps({
+      runFullSync,
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    // Drain the catch-up timer so its call doesn't count
+    await vi.advanceTimersByTimeAsync(5001);
+    runFullSync.mockClear();
+    // Now pending is empty but flushNow() should still call runFullSync via sweepRequested
+    await ctl.flushNow();
+    expect(runFullSync).toHaveBeenCalledOnce();
+  });
+
+  it('events arriving during a flush trigger a follow-up', async () => {
+    let onEvent: any = null;
+    let resolveFirst: () => void = () => {};
+    const firstPromise = new Promise<void>(res => { resolveFirst = res; });
+    const runFullSync = vi.fn()
+      .mockImplementationOnce(async () => { await firstPromise; return { upserted: 1, deleted: 0, rejected: [] }; })
+      .mockResolvedValue({ upserted: 1, deleted: 0, rejected: [] });
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync,
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'modify', path: 'a.md' });
+    await vi.advanceTimersByTimeAsync(8001);
+    onEvent({ kind: 'modify', path: 'b.md' });
+    resolveFirst();
+    await vi.advanceTimersByTimeAsync(8001);
+    expect(runFullSync).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('AutoSync safety-net sweep', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('runs a flush every 10 minutes even without events', async () => {
+    const runFullSync = vi.fn(async () => ({ upserted: 0, deleted: 0, rejected: [] }));
+    const deps = fakeDeps({
+      runFullSync,
+      setInterval: (cb, ms) => setInterval(cb, ms) as unknown as number,
+      clearInterval: (id) => clearInterval(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1);
+    expect(runFullSync).toHaveBeenCalled();
+  });
+});
+
+describe('AutoSync catch-up', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('runs a flush ~5s after start', async () => {
+    const runFullSync = vi.fn(async () => ({ upserted: 0, deleted: 0, rejected: [] }));
+    const deps = fakeDeps({
+      runFullSync,
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(runFullSync).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2);
+    expect(runFullSync).toHaveBeenCalledOnce();
+  });
+});
+
+describe('AutoSync error handling', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('retries with backoff after a failure', async () => {
+    let onEvent: any = null;
+    const runFullSync = vi.fn()
+      .mockRejectedValueOnce(new Error('e1'))
+      .mockResolvedValue({ upserted: 0, deleted: 0, rejected: [] });
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync,
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'modify', path: 'a.md' });
+    await vi.advanceTimersByTimeAsync(8001);
+    expect(runFullSync).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(runFullSync).toHaveBeenCalledTimes(2);
+    expect(ctl.getStatus().kind).toBe('idle');
+  });
+
+  it('surfaces a single notice after 3 consecutive failures', async () => {
+    let onEvent: any = null;
+    const runFullSync = vi.fn().mockRejectedValue(new Error('persistent'));
+    const notice = vi.fn();
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync,
+      notice,
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'modify', path: 'a.md' });
+    await vi.advanceTimersByTimeAsync(8001);    // fail 1
+    await vi.advanceTimersByTimeAsync(30_000);  // fail 2
+    await vi.advanceTimersByTimeAsync(120_000); // fail 3 -> notice
+    expect(notice).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(600_000); // fail 4 -> no extra notice
+    expect(notice).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('AutoSync end-to-end with real local-store', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('embeds a new note after debounce and prunes deleted notes', async () => {
+    const files = new Map<string, string>();
+    const adapter = {
+      exists: async (p: string) => files.has(p),
+      read: async (p: string) => files.get(p)!,
+      write: async (p: string, d: string) => { files.set(p, d); },
+    };
+    const store = createLocalStore({ adapter, path: 'cache.json', model: 'voyage-4' });
+    await store.load();
+
+    const voyage = { embed: async (texts: string[]) => texts.map((_, i) => [i, i + 1]) };
+
+    const vaultFiles: NoteInput[] = [
+      { path: 'a.md', content: 'alpha', mtime: 1 },
+    ];
+
+    let onEvent: any = null;
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync: () => runLocalSync(vaultFiles, store, voyage as any),
+      setTimer: (cb, ms) => ms === 5000 ? 0 : setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'modify', path: 'a.md' });
+    await vi.advanceTimersByTimeAsync(8001);
+    expect(store.all().map(e => e.path)).toEqual(['a.md']);
+
+    vaultFiles.length = 0;
+    onEvent({ kind: 'delete', path: 'a.md' });
+    await vi.advanceTimersByTimeAsync(8001);
+    expect(store.size()).toBe(0);
+  });
+});

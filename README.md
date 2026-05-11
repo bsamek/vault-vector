@@ -98,9 +98,19 @@ Run against the in-house Evergreen documentation (good topical breadth):
 7. (Voyage mode) Change the Voyage model in settings, re-run Sync. Confirm the cache is wiped and rebuilt.
 8. (Reranking) Set a Voyage API key, enable **Reranking**, re-run Search on the same queries. Top order should shift compared to step 3. Add a rerank instruction and confirm the order shifts again. Break the API key (append junk) and confirm the Notice "Rerank failed, showing vector results." and that the modal still opens with vector-ordered results.
 
+## Auto-sync
+
+Vault Vector watches the vault for changes and reindexes notes automatically. Edits flush after about 8 seconds of idle. A status bar item shows current state:
+
+- `VV ✓` idle (hover for last sync time)
+- `VV •N` N changes queued
+- `VV ⟳` syncing now
+- `VV !` last sync failed (click to retry)
+
+Click the status bar item to force a sync. Disable auto-sync via Settings if you prefer to run `Vault Vector: Sync` manually.
+
 ## Limitations (MVP)
 
-- Manual sync only, no live updates on file change.
 - One embedding per note. Notes over the model's token limit are rejected and skipped.
 - Desktop-only (Atlas mode uses the Node `mongodb` driver).
 - `.md` files only.
