@@ -71,14 +71,36 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
     return false;
   }
 
+  let flushing = false;
+
   async function runFlush(): Promise<void> {
-    if (pending.size === 0) return;
+    if (flushing) return;
+    if (pending.size === 0) {
+      emitStatus({ kind: 'idle', lastSyncAt: deps.now() });
+      return;
+    }
+    flushing = true;
+    // Snapshot the keys in flight so we only clear those on success,
+    // leaving any events that arrive during the async sync intact.
+    const inFlightKeys = new Set(pending.keys());
+    emitStatus({ kind: 'syncing', inFlightCount: inFlightKeys.size });
+    let succeeded = false;
     try {
       await deps.runFullSync();
-      pending.clear();
-      oldestPendingAt = null;
-    } catch {
-      // proper error handling in Task 10
+      for (const key of inFlightKeys) pending.delete(key);
+      if (pending.size === 0) oldestPendingAt = null;
+      emitStatus({ kind: 'idle', lastSyncAt: deps.now() });
+      succeeded = true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      deps.logError('AutoSync flush failed', err);
+      emitStatus({ kind: 'error', message });
+    } finally {
+      flushing = false;
+      if (succeeded && pending.size > 0) {
+        if (debounceTimer !== null) { deps.clearTimer(debounceTimer); debounceTimer = null; }
+        void runFlush();
+      }
     }
   }
 
@@ -113,7 +135,8 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
       }
     },
     async flushNow() {
-      // implementation in later task
+      if (debounceTimer !== null) { deps.clearTimer(debounceTimer); debounceTimer = null; }
+      await runFlush();
     },
     getStatus() {
       return status;

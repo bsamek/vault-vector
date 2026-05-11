@@ -163,3 +163,64 @@ describe('AutoSync flush triggers', () => {
     expect(runFullSync).toHaveBeenCalled();
   });
 });
+
+describe('AutoSync flush execution', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('clears pending and reports idle on success', async () => {
+    let onEvent: any = null;
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync: vi.fn(async () => ({ upserted: 1, deleted: 0, rejected: [] })),
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'modify', path: 'a.md' });
+    await vi.advanceTimersByTimeAsync(8001);
+    expect(ctl.getStatus().kind).toBe('idle');
+  });
+
+  it('retains pending and reports error on failure', async () => {
+    let onEvent: any = null;
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync: vi.fn(async () => { throw new Error('boom'); }),
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'modify', path: 'a.md' });
+    await vi.advanceTimersByTimeAsync(8001);
+    expect(ctl.getStatus().kind).toBe('error');
+  });
+
+  it('events arriving during a flush trigger a follow-up', async () => {
+    let onEvent: any = null;
+    let resolveFirst: () => void = () => {};
+    const firstPromise = new Promise<void>(res => { resolveFirst = res; });
+    const runFullSync = vi.fn()
+      .mockImplementationOnce(async () => { await firstPromise; return { upserted: 1, deleted: 0, rejected: [] }; })
+      .mockResolvedValue({ upserted: 1, deleted: 0, rejected: [] });
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync,
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'modify', path: 'a.md' });
+    await vi.advanceTimersByTimeAsync(8001);
+    onEvent({ kind: 'modify', path: 'b.md' });
+    resolveFirst();
+    await vi.advanceTimersByTimeAsync(8001);
+    expect(runFullSync).toHaveBeenCalledTimes(2);
+  });
+});
