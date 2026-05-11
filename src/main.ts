@@ -52,7 +52,7 @@ export default class VaultVectorPlugin extends Plugin {
     this.statusBarEl = this.addStatusBarItem();
     this.statusBarEl.addClass('vault-vector-status');
     this.statusBarEl.style.cursor = 'pointer';
-    this.statusBarEl.onClickEvent(() => { void this.runSyncCommand(); });
+    this.statusBarEl.onClickEvent(() => { void this.autoSync?.flushNow(); });
     this.renderStatus({ kind: 'idle', lastSyncAt: null });
 
     this.autoSync = createAutoSync(this.buildAutoSyncDeps());
