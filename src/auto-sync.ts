@@ -77,6 +77,7 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
     return false;
   }
 
+  let retryTimer: number | null = null;
   let flushing = false;
   let consecutiveFailures = 0;
   let noticeShown = false;
@@ -105,6 +106,7 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
       if (pending.size === 0) oldestPendingAt = null;
       consecutiveFailures = 0;
       noticeShown = false;
+      if (retryTimer !== null) { deps.clearTimer(retryTimer); retryTimer = null; }
       emitStatus({ kind: 'idle', lastSyncAt: deps.now() });
       succeeded = true;
     } catch (err) {
@@ -119,7 +121,7 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
       // Cancel any pending debounce; the backoff timer takes over retry responsibility.
       if (debounceTimer !== null) { deps.clearTimer(debounceTimer); debounceTimer = null; }
       const idx = Math.min(consecutiveFailures - 1, BACKOFF_MS.length - 1);
-      deps.setTimer(() => { void runFlush(); }, BACKOFF_MS[idx]);
+      retryTimer = deps.setTimer(() => { retryTimer = null; void runFlush(); }, BACKOFF_MS[idx]);
     } finally {
       flushing = false;
       if (succeeded && pending.size > 0) {
@@ -166,6 +168,8 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
     },
     stop() {
       if (sweepTimer !== null) { deps.clearInterval(sweepTimer); sweepTimer = null; }
+      if (debounceTimer !== null) { deps.clearTimer(debounceTimer); debounceTimer = null; }
+      if (retryTimer !== null) { deps.clearTimer(retryTimer); retryTimer = null; }
       if (unsubscribe) {
         unsubscribe();
         unsubscribe = null;

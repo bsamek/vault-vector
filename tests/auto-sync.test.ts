@@ -46,6 +46,28 @@ describe('AutoSync lifecycle', () => {
     ctl.start();
     expect(deps.subscribeVaultEvents).not.toHaveBeenCalled();
   });
+
+  it('stop() prevents a queued debounce flush from firing', async () => {
+    vi.useFakeTimers();
+    let onEvent: any = null;
+    const runFullSync = vi.fn(async () => ({ upserted: 1, deleted: 0, rejected: [] }));
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync,
+      // Suppress the catch-up timer so only the debounce fires
+      setTimer: (cb, ms) => ms === 5000 ? 0 : setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'modify', path: 'a.md' });
+    // Debounce timer is now running (8s). Stop before it fires.
+    ctl.stop();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(runFullSync).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
 });
 
 describe('AutoSync pending set', () => {
