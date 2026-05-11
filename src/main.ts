@@ -1,5 +1,5 @@
 import { MongoClient } from 'mongodb';
-import { Notice, Plugin, TFile } from 'obsidian';
+import { Notice, Plugin, setTooltip, TFile } from 'obsidian';
 import { createAutoSync, type AutoSync, type AutoSyncEvent, type AutoSyncStatus } from './auto-sync';
 import {
   type AtlasFactory,
@@ -80,23 +80,23 @@ export default class VaultVectorPlugin extends Plugin {
           ? new Date(status.lastSyncAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           : 'never';
         el.setText('VV ✓');
-        el.setAttr('title', `Vault Vector: index up to date (last sync ${stamp})`);
+        setTooltip(el, `Vault Vector: index up to date (last sync ${stamp}). Click to sync now.`);
         el.style.color = '';
         break;
       }
       case 'pending':
         el.setText(`VV •${status.pendingCount}`);
-        el.setAttr('title', `${status.pendingCount} changes queued, syncing soon`);
+        setTooltip(el, `${status.pendingCount} changes queued, syncing soon. Click to sync now.`);
         el.style.color = '';
         break;
       case 'syncing':
         el.setText('VV ⟳');
-        el.setAttr('title', `Syncing ${status.inFlightCount} notes…`);
+        setTooltip(el, `Syncing ${status.inFlightCount} notes…`);
         el.style.color = '';
         break;
       case 'error':
         el.setText('VV !');
-        el.setAttr('title', `${status.message} (click to retry)`);
+        setTooltip(el, `${status.message} Click to retry.`);
         el.style.color = 'var(--text-error)';
         break;
     }
