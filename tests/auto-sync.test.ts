@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createAutoSync, type AutoSyncDeps } from '../src/auto-sync';
+import { createLocalStore } from '../src/local-store';
+import { runLocalSync, type NoteInput } from '../src/sync';
 
 function fakeDeps(over: Partial<AutoSyncDeps> = {}): AutoSyncDeps {
   const subscribe = vi.fn(() => () => {});
@@ -363,5 +365,46 @@ describe('AutoSync error handling', () => {
     expect(notice).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(600_000); // fail 4 -> no extra notice
     expect(notice).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('AutoSync end-to-end with real local-store', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('embeds a new note after debounce and prunes deleted notes', async () => {
+    const files = new Map<string, string>();
+    const adapter = {
+      exists: async (p: string) => files.has(p),
+      read: async (p: string) => files.get(p)!,
+      write: async (p: string, d: string) => { files.set(p, d); },
+    };
+    const store = createLocalStore({ adapter, path: 'cache.json', model: 'voyage-4' });
+    await store.load();
+
+    const voyage = { embed: async (texts: string[]) => texts.map((_, i) => [i, i + 1]) };
+
+    const vaultFiles: NoteInput[] = [
+      { path: 'a.md', content: 'alpha', mtime: 1 },
+    ];
+
+    let onEvent: any = null;
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync: () => runLocalSync(vaultFiles, store, voyage as any),
+      setTimer: (cb, ms) => ms === 5000 ? 0 : setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'modify', path: 'a.md' });
+    await vi.advanceTimersByTimeAsync(8001);
+    expect(store.all().map(e => e.path)).toEqual(['a.md']);
+
+    vaultFiles.length = 0;
+    onEvent({ kind: 'delete', path: 'a.md' });
+    await vi.advanceTimersByTimeAsync(8001);
+    expect(store.size()).toBe(0);
   });
 });
