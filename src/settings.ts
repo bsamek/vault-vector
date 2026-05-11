@@ -11,6 +11,9 @@ export interface VaultVectorSettings {
   embeddingProvider: EmbeddingProvider;
   voyageApiKey: string;
   voyageModel: string;
+  rerankEnabled: boolean;
+  rerankModel: string;
+  rerankInstruction: string;
 }
 
 export const DEFAULT_SETTINGS: VaultVectorSettings = {
@@ -22,6 +25,9 @@ export const DEFAULT_SETTINGS: VaultVectorSettings = {
   embeddingProvider: 'atlas-auto',
   voyageApiKey: '',
   voyageModel: 'voyage-4',
+  rerankEnabled: false,
+  rerankModel: 'rerank-2.5-lite',
+  rerankInstruction: '',
 };
 
 export type UriValidation = 'missing' | 'malformed' | 'valid';

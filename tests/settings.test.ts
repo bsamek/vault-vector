@@ -39,4 +39,10 @@ describe('DEFAULT_SETTINGS', () => {
     expect(DEFAULT_SETTINGS.voyageApiKey).toBe('');
     expect(DEFAULT_SETTINGS.voyageModel).toBe('voyage-4');
   });
+
+  it('defaults reranking off, with rerank-2.5-lite and empty instruction', () => {
+    expect(DEFAULT_SETTINGS.rerankEnabled).toBe(false);
+    expect(DEFAULT_SETTINGS.rerankModel).toBe('rerank-2.5-lite');
+    expect(DEFAULT_SETTINGS.rerankInstruction).toBe('');
+  });
 });
