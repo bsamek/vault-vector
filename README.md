@@ -22,11 +22,33 @@ Both modes coexist behind a settings toggle. You can switch freely.
 
 ## Install the plugin
 
-Until this is published to the community plugins gallery:
+Until this is published to the community plugins gallery, clone and build:
 
-1. Clone this repo into `<your vault>/.obsidian/plugins/vault-vector`.
-2. From inside that directory: `npm install && npm run build`.
-3. In Obsidian: Settings → Community plugins → Reload, then enable **Vault Vector**.
+```
+git clone <repo-url> vault-vector
+cd vault-vector
+npm install && npm run build
+```
+
+The build produces `main.js` and `manifest.json` in the repo root. Those two files are what Obsidian needs. Pick one of the following ways to get them into your vault.
+
+### Option A — symlink (recommended for development)
+
+Edits to the built files in this repo show up in the vault on next reload:
+
+```
+mkdir -p "<your vault>/.obsidian/plugins/vault-vector"
+ln -sf "$PWD/main.js" "$PWD/manifest.json" "<your vault>/.obsidian/plugins/vault-vector/"
+```
+
+### Option B — copy (one-off install)
+
+```
+mkdir -p "<your vault>/.obsidian/plugins/vault-vector"
+cp main.js manifest.json "<your vault>/.obsidian/plugins/vault-vector/"
+```
+
+After either option: in Obsidian, Settings → Community plugins → Reload, then enable **Vault Vector**. (If community plugins are disabled, turn off Restricted Mode first.)
 
 ## Configure
 
