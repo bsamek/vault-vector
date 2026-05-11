@@ -12,7 +12,7 @@ const ctx = await esbuild.context({
   banner: { js: banner },
   entryPoints: ['src/main.ts'],
   bundle: true,
-  external: ['obsidian', 'electron', ...builtins],
+  external: ['obsidian', 'electron', ...builtins.filter(m => m !== 'punycode')],
   format: 'cjs',
   target: 'es2020',
   logLevel: 'info',
