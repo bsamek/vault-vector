@@ -150,5 +150,55 @@ export class VaultVectorSettingTab extends PluginSettingTab {
           }
         })
       );
+
+    containerEl.createEl('h3', { text: 'Reranking' });
+
+    new Setting(containerEl)
+      .setName('Enable reranking')
+      .setDesc('After initial retrieval, ask Voyage to reorder the top candidates. Applies to both providers. Requires a Voyage API key.')
+      .addToggle(toggle =>
+        toggle
+          .setValue(this.plugin.settings.rerankEnabled)
+          .onChange(async (value: boolean) => {
+            this.plugin.settings.rerankEnabled = value;
+            await this.plugin.saveSettings();
+            this.display();
+          })
+      );
+
+    if (this.plugin.settings.rerankEnabled && !this.plugin.settings.voyageApiKey.trim()) {
+      const warn = containerEl.createEl('div', {
+        text: 'Reranking requires a Voyage API key (set above).',
+      });
+      warn.style.color = 'var(--text-error)';
+      warn.style.marginBottom = '0.75em';
+    }
+
+    new Setting(containerEl)
+      .setName('Rerank model')
+      .setDesc('Voyage reranker model. Lite is faster; the full model is more accurate.')
+      .addDropdown(drop =>
+        drop
+          .addOption('rerank-2.5-lite', 'rerank-2.5-lite')
+          .addOption('rerank-2.5', 'rerank-2.5')
+          .setValue(this.plugin.settings.rerankModel)
+          .onChange(async (value: string) => {
+            this.plugin.settings.rerankModel = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Rerank instruction (optional)')
+      .setDesc('Prepended to the query when reranking. Use it to steer the reranker, e.g. "Prefer notes that explain why over notes that list how."')
+      .addTextArea(text =>
+        text
+          .setPlaceholder('e.g. Prefer notes that explain why over notes that list how.')
+          .setValue(this.plugin.settings.rerankInstruction)
+          .onChange(async (value: string) => {
+            this.plugin.settings.rerankInstruction = value;
+            await this.plugin.saveSettings();
+          })
+      );
   }
 }
