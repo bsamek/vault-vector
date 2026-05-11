@@ -1,6 +1,20 @@
-import { describe, expect, it } from 'vitest';
-import { renderSnippet, buildVectorSearchPipeline, executeSearch } from '../src/search';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  renderSnippet,
+  buildVectorSearchPipeline,
+  executeSearch,
+  executeLocalSearch,
+} from '../src/search';
 import { FakeCollection } from './fakes/collection';
+import { createLocalStore, type FileAdapter } from '../src/local-store';
+import type { VoyageClient, VoyageInputType } from '../src/voyage';
+
+class MemoryAdapter implements FileAdapter {
+  files = new Map<string, string>();
+  async exists(p: string) { return this.files.has(p); }
+  async read(p: string) { return this.files.get(p)!; }
+  async write(p: string, d: string) { this.files.set(p, d); }
+}
 
 describe('renderSnippet', () => {
   it('returns content unchanged when shorter than the limit', () => {
@@ -70,5 +84,45 @@ describe('executeSearch', () => {
       { path: 'a.md', snippet: 'line one line two', score: 0.93 },
       { path: 'b.md', snippet: 'b content', score: 0.81 },
     ]);
+  });
+});
+
+describe('executeLocalSearch', () => {
+  async function storeWith(entries: Array<{ path: string; embedding: number[]; content: string }>) {
+    const store = createLocalStore({
+      adapter: new MemoryAdapter(),
+      path: 'cache.json',
+      model: 'voyage-4',
+    });
+    await store.load();
+    for (const e of entries) {
+      store.upsert(e.path, { mtime: 0, embedding: e.embedding, content: e.content });
+    }
+    return store;
+  }
+
+  it('returns an empty list for blank queries without calling Voyage', async () => {
+    const embed = vi.fn(async () => [[1, 0]]);
+    const voyage: VoyageClient = { embed };
+    const store = await storeWith([{ path: 'a.md', embedding: [1, 0], content: 'a' }]);
+
+    const hits = await executeLocalSearch(voyage, store, '   ', 5);
+
+    expect(hits).toEqual([]);
+    expect(embed).not.toHaveBeenCalled();
+  });
+
+  it('embeds the query with input_type "query" and ranks store entries', async () => {
+    const embed = vi.fn(async (_texts: string[], _t: VoyageInputType) => [[1, 0]]);
+    const voyage: VoyageClient = { embed };
+    const store = await storeWith([
+      { path: 'far.md', embedding: [-1, 0], content: 'far' },
+      { path: 'close.md', embedding: [1, 0.05], content: 'close' },
+    ]);
+
+    const hits = await executeLocalSearch(voyage, store, 'find', 5);
+
+    expect(embed.mock.calls[0][1]).toBe('query');
+    expect(hits[0].path).toBe('close.md');
   });
 });

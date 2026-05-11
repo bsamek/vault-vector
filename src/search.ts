@@ -1,6 +1,8 @@
 import type { CollectionLike } from './atlas';
 import { App, SuggestModal } from 'obsidian';
-import type { VaultVectorSettings } from './settings';
+import type { LocalStore } from './local-store';
+import { searchLocalStore } from './local-search';
+import type { VoyageClient } from './voyage';
 
 export function renderSnippet(content: string, maxChars: number = 200): string {
   const cleaned = content.trim().replace(/\s+/g, ' ');
@@ -50,21 +52,27 @@ export async function executeSearch(
   }));
 }
 
+export async function executeLocalSearch(
+  voyage: VoyageClient,
+  store: LocalStore,
+  query: string,
+  limit: number
+): Promise<SearchHit[]> {
+  if (!query.trim()) return [];
+  const [queryEmbedding] = await voyage.embed([query], 'query');
+  return searchLocalStore(store, queryEmbedding, limit);
+}
+
+export type SearchFn = (query: string) => Promise<SearchHit[]>;
+
 export class VaultVectorSearchModal extends SuggestModal<SearchHit> {
-  private readonly collection: CollectionLike;
-  private readonly settings: VaultVectorSettings;
+  private readonly search: SearchFn;
   private readonly onPick: (path: string) => void;
   private lastSearchId = 0;
 
-  constructor(
-    app: App,
-    settings: VaultVectorSettings,
-    collection: CollectionLike,
-    onPick: (path: string) => void
-  ) {
+  constructor(app: App, search: SearchFn, onPick: (path: string) => void) {
     super(app);
-    this.settings = settings;
-    this.collection = collection;
+    this.search = search;
     this.onPick = onPick;
     this.setPlaceholder('Search your vault semantically…');
   }
@@ -74,11 +82,7 @@ export class VaultVectorSearchModal extends SuggestModal<SearchHit> {
     await new Promise(resolve => setTimeout(resolve, 300));
     if (id !== this.lastSearchId) return [];
     try {
-      return await executeSearch(this.collection, {
-        index: this.settings.indexName,
-        query,
-        limit: this.settings.resultLimit,
-      });
+      return await this.search(query);
     } catch (err) {
       console.error('Vault Vector search failed', err);
       return [];
