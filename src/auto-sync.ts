@@ -106,6 +106,9 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
 
   function recordEvent(e: AutoSyncEvent): void {
     if (e.kind === 'rename') {
+      if (deps.isLocalProvider()) {
+        deps.renameLocal(e.oldPath, e.newPath);
+      }
       pending.set(e.newPath, { kind: 'rename', oldPath: e.oldPath, newPath: e.newPath });
     } else if (e.kind === 'delete') {
       pending.set(e.path, { kind: 'delete', path: e.path });

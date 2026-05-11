@@ -164,6 +164,39 @@ describe('AutoSync flush triggers', () => {
   });
 });
 
+describe('AutoSync rename handling', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('calls renameLocal on rename event in local mode', () => {
+    let onEvent: any = null;
+    const renameLocal = vi.fn(() => true);
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      renameLocal,
+      isLocalProvider: () => true,
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'rename', oldPath: 'a.md', newPath: 'b.md' });
+    expect(renameLocal).toHaveBeenCalledWith('a.md', 'b.md');
+  });
+
+  it('does not call renameLocal in atlas mode', () => {
+    let onEvent: any = null;
+    const renameLocal = vi.fn(() => true);
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      renameLocal,
+      isLocalProvider: () => false,
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'rename', oldPath: 'a.md', newPath: 'b.md' });
+    expect(renameLocal).not.toHaveBeenCalled();
+  });
+});
+
 describe('AutoSync flush execution', () => {
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
