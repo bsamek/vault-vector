@@ -244,6 +244,86 @@ describe('executeSearch with rerank', () => {
   });
 });
 
+describe('executeSearch debug timing', () => {
+  it('invokes debug callback with "search" timing when provided', async () => {
+    const fake = new FakeCollection();
+    fake.aggregateResults = [{ path: 'a.md', content: 'a', score: 1 }];
+    const log = vi.fn();
+    await executeSearch(fake, { index: 'idx', query: 'hi', limit: 5 }, undefined, log);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0][0]).toBe('search');
+    expect(typeof log.mock.calls[0][1]).toBe('number');
+    expect(log.mock.calls[0][1]).toBeGreaterThanOrEqual(0);
+  });
+
+  it('also invokes debug callback with "rerank" timing when reranking', async () => {
+    const fake = new FakeCollection();
+    fake.aggregateResults = [{ path: 'a.md', content: 'a', score: 1 }];
+    const reranker: VoyageReranker = {
+      async rerank(_q, documents) {
+        return documents.map((_, i) => ({ index: i, relevanceScore: 1 - i * 0.1 }));
+      },
+    };
+    const log = vi.fn();
+    await executeSearch(
+      fake,
+      { index: 'idx', query: 'hi', limit: 5 },
+      { reranker, instruction: '' },
+      log,
+    );
+    const labels = log.mock.calls.map(c => c[0]);
+    expect(labels).toEqual(['search', 'rerank']);
+  });
+
+  it('does not require a debug callback', async () => {
+    const fake = new FakeCollection();
+    fake.aggregateResults = [];
+    await expect(
+      executeSearch(fake, { index: 'idx', query: 'hi', limit: 5 })
+    ).resolves.toEqual([]);
+  });
+});
+
+describe('executeLocalSearch debug timing', () => {
+  it('invokes debug callback with "search" timing when provided', async () => {
+    const embed = vi.fn(async () => [[1, 0]]);
+    const voyage: VoyageClient = { embed };
+    const store = createLocalStore({
+      adapter: new MemoryAdapter(),
+      path: 'cache.json',
+      model: 'voyage-4',
+    });
+    await store.load();
+    store.upsert('a.md', { mtime: 0, embedding: [1, 0], content: 'a' });
+    const log = vi.fn();
+    await executeLocalSearch(voyage, store, 'q', 5, undefined, log);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0][0]).toBe('search');
+    expect(typeof log.mock.calls[0][1]).toBe('number');
+  });
+
+  it('also invokes debug callback with "rerank" timing when reranking', async () => {
+    const embed = vi.fn(async () => [[1, 0]]);
+    const voyage: VoyageClient = { embed };
+    const store = createLocalStore({
+      adapter: new MemoryAdapter(),
+      path: 'cache.json',
+      model: 'voyage-4',
+    });
+    await store.load();
+    store.upsert('a.md', { mtime: 0, embedding: [1, 0], content: 'a' });
+    const reranker: VoyageReranker = {
+      async rerank(_q, docs) {
+        return docs.map((_, i) => ({ index: i, relevanceScore: 1 - i * 0.1 }));
+      },
+    };
+    const log = vi.fn();
+    await executeLocalSearch(voyage, store, 'q', 5, { reranker, instruction: '' }, log);
+    const labels = log.mock.calls.map(c => c[0]);
+    expect(labels).toEqual(['search', 'rerank']);
+  });
+});
+
 describe('executeLocalSearch with rerank', () => {
   it('over-fetches candidateCount(limit) from the store and reranks to limit', async () => {
     const embed = vi.fn(async () => [[1, 0]]);

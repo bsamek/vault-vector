@@ -14,6 +14,7 @@ export interface VaultVectorSettings {
   rerankEnabled: boolean;
   rerankModel: string;
   rerankInstruction: string;
+  debugMode: boolean;
 }
 
 export const DEFAULT_SETTINGS: VaultVectorSettings = {
@@ -28,6 +29,7 @@ export const DEFAULT_SETTINGS: VaultVectorSettings = {
   rerankEnabled: false,
   rerankModel: 'rerank-2.5-lite',
   rerankInstruction: '',
+  debugMode: false,
 };
 
 export type UriValidation = 'missing' | 'malformed' | 'valid';
@@ -198,6 +200,20 @@ export class VaultVectorSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.rerankInstruction)
           .onChange(async (value: string) => {
             this.plugin.settings.rerankInstruction = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    containerEl.createEl('h3', { text: 'Debug' });
+
+    new Setting(containerEl)
+      .setName('Debug mode')
+      .setDesc('Log search and rerank timings to the Obsidian developer console (cmd-option-i).')
+      .addToggle(toggle =>
+        toggle
+          .setValue(this.plugin.settings.debugMode)
+          .onChange(async (value: boolean) => {
+            this.plugin.settings.debugMode = value;
             await this.plugin.saveSettings();
           })
       );

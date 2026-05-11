@@ -45,10 +45,13 @@ export function buildVectorSearchPipeline(opts: {
   ];
 }
 
+export type DebugLogger = (label: 'search' | 'rerank', ms: number) => void;
+
 export async function executeSearch(
   collection: CollectionLike,
   opts: { index: string; query: string; limit: number },
-  rerank?: RerankConfig
+  rerank?: RerankConfig,
+  debug?: DebugLogger,
 ): Promise<SearchHit[]> {
   if (!opts.query.trim()) return [];
   const fetchLimit = rerank ? candidateCount(opts.limit) : opts.limit;
@@ -57,7 +60,9 @@ export async function executeSearch(
     query: opts.query,
     limit: fetchLimit,
   });
+  const searchStart = performance.now();
   const docs = await collection.aggregate(pipeline).toArray();
+  if (debug) debug('search', performance.now() - searchStart);
   const hits: SearchHit[] = docs.map(d => ({
     path: String(d.path),
     snippet: renderSnippet(String(d.content)),
@@ -65,7 +70,9 @@ export async function executeSearch(
     score: typeof d.score === 'number' ? d.score : 0,
   }));
   if (!rerank) return hits;
+  const rerankStart = performance.now();
   const reranked = await applyRerank(hits, opts.query, rerank);
+  if (debug) debug('rerank', performance.now() - rerankStart);
   return reranked.slice(0, opts.limit);
 }
 
@@ -74,14 +81,19 @@ export async function executeLocalSearch(
   store: LocalStore,
   query: string,
   limit: number,
-  rerank?: RerankConfig
+  rerank?: RerankConfig,
+  debug?: DebugLogger,
 ): Promise<SearchHit[]> {
   if (!query.trim()) return [];
-  const [queryEmbedding] = await voyage.embed([query], 'query');
   const fetchLimit = rerank ? candidateCount(limit) : limit;
+  const searchStart = performance.now();
+  const [queryEmbedding] = await voyage.embed([query], 'query');
   const hits = searchLocalStore(store, queryEmbedding, fetchLimit);
+  if (debug) debug('search', performance.now() - searchStart);
   if (!rerank) return hits;
+  const rerankStart = performance.now();
   const reranked = await applyRerank(hits, query, rerank);
+  if (debug) debug('rerank', performance.now() - rerankStart);
   return reranked.slice(0, limit);
 }
 

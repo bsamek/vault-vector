@@ -19,6 +19,7 @@ import {
 } from './settings';
 import { type NoteInput, runLocalSync, runSync } from './sync';
 import {
+  type DebugLogger,
   executeLocalSearch,
   executeSearch,
   type RerankConfig,
@@ -200,6 +201,10 @@ export default class VaultVectorPlugin extends Plugin {
       ? { reranker: this.getReranker(), instruction: this.settings.rerankInstruction }
       : undefined;
 
+    const debug: DebugLogger | undefined = this.settings.debugMode
+      ? (label, ms) => console.log(`[Vault Vector] ${label}: ${ms.toFixed(1)}ms`)
+      : undefined;
+
     if (this.settings.embeddingProvider === 'voyage-local') {
       if (!this.settings.voyageApiKey.trim()) {
         new Notice('Configure Voyage API key in Settings.');
@@ -219,14 +224,14 @@ export default class VaultVectorPlugin extends Plugin {
       const search: SearchFn = rerankCfg
         ? async (query) => {
             try {
-              return await executeLocalSearch(voyage, store, query, limit, rerankCfg);
+              return await executeLocalSearch(voyage, store, query, limit, rerankCfg, debug);
             } catch (err) {
               console.error('Vault Vector rerank failed', err);
               new Notice('Rerank failed, showing vector results.');
-              return executeLocalSearch(voyage, store, query, limit);
+              return executeLocalSearch(voyage, store, query, limit, undefined, debug);
             }
           }
-        : (query) => executeLocalSearch(voyage, store, query, limit);
+        : (query) => executeLocalSearch(voyage, store, query, limit, undefined, debug);
       new VaultVectorSearchModal(this.app, search, onPick).open();
       return;
     }
@@ -246,15 +251,16 @@ export default class VaultVectorPlugin extends Plugin {
               return await executeSearch(
                 collection,
                 { index: indexName, query, limit },
-                rerankCfg
+                rerankCfg,
+                debug,
               );
             } catch (err) {
               console.error('Vault Vector rerank failed', err);
               new Notice('Rerank failed, showing vector results.');
-              return executeSearch(collection, { index: indexName, query, limit });
+              return executeSearch(collection, { index: indexName, query, limit }, undefined, debug);
             }
           }
-        : (query) => executeSearch(collection, { index: indexName, query, limit });
+        : (query) => executeSearch(collection, { index: indexName, query, limit }, undefined, debug);
       new VaultVectorSearchModal(this.app, search, onPick).open();
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);

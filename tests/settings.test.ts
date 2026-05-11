@@ -45,4 +45,8 @@ describe('DEFAULT_SETTINGS', () => {
     expect(DEFAULT_SETTINGS.rerankModel).toBe('rerank-2.5-lite');
     expect(DEFAULT_SETTINGS.rerankInstruction).toBe('');
   });
+
+  it('defaults debug mode off', () => {
+    expect(DEFAULT_SETTINGS.debugMode).toBe(false);
+  });
 });
