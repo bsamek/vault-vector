@@ -10,7 +10,7 @@ export function renderSnippet(content: string, maxChars: number = 200): string {
   return cleaned.slice(0, maxChars - 1) + '…';
 }
 
-export type SearchHit = { path: string; snippet: string; score: number };
+export type SearchHit = { path: string; snippet: string; content: string; score: number };
 
 export function buildVectorSearchPipeline(opts: {
   index: string;
@@ -48,6 +48,7 @@ export async function executeSearch(
   return docs.map(d => ({
     path: String(d.path),
     snippet: renderSnippet(String(d.content)),
+    content: String(d.content),
     score: typeof d.score === 'number' ? d.score : 0,
   }));
 }

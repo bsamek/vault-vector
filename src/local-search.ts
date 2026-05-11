@@ -29,6 +29,7 @@ export function searchLocalStore(
   return scored.slice(0, limit).map(s => ({
     path: s.path,
     snippet: renderSnippet(s.content),
+    content: s.content,
     score: s.score,
   }));
 }

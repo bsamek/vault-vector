@@ -81,8 +81,8 @@ describe('executeSearch', () => {
     const hits = await executeSearch(fake, { index: 'idx', query: 'hi', limit: 5 });
 
     expect(hits).toEqual([
-      { path: 'a.md', snippet: 'line one line two', score: 0.93 },
-      { path: 'b.md', snippet: 'b content', score: 0.81 },
+      { path: 'a.md', snippet: 'line one line two', content: 'line one\n\nline two', score: 0.93 },
+      { path: 'b.md', snippet: 'b content', content: 'b content', score: 0.81 },
     ]);
   });
 });
