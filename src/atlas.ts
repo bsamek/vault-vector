@@ -1,0 +1,28 @@
+export interface CollectionLike {
+  replaceOne(
+    filter: { _id: string },
+    doc: Record<string, unknown>,
+    opts?: { upsert?: boolean }
+  ): Promise<unknown>;
+  find(filter: Record<string, unknown>): {
+    project(p: Record<string, 0 | 1>): {
+      toArray(): Promise<Array<Record<string, unknown>>>;
+    };
+  };
+  deleteMany(filter: Record<string, unknown>): Promise<{ deletedCount?: number }>;
+  aggregate(pipeline: unknown[]): {
+    toArray(): Promise<Array<Record<string, unknown>>>;
+  };
+}
+
+export interface MongoClientLike {
+  db(name: string): { collection(name: string): CollectionLike };
+  close(): Promise<void>;
+}
+
+export type Connector = (uri: string) => Promise<MongoClientLike>;
+
+export interface AtlasFactory {
+  getCollection(): Promise<CollectionLike>;
+  close(): Promise<void>;
+}
