@@ -126,7 +126,7 @@ All thrown errors surface as Obsidian `Notice` with a short user message and ful
 
 ## Testing
 
-Built test-first (red/green/refactor) using Vitest. Three layers:
+Built test-first (red/green/refactor) using Vitest. Two layers:
 
 ### Unit tests (pure logic, fast, no network)
 
@@ -134,16 +134,7 @@ Built test-first (red/green/refactor) using Vitest. Three layers:
 - **Snippet rendering** (`search.ts`): given raw note content and a query, produce the 200-char snippet shown in the modal. Tested with edge cases (empty content, content shorter than 200 chars, content with newlines).
 - **Settings validation** (`settings.ts`): given user-entered URI strings, classify as valid / missing / malformed.
 
-Mock the Atlas `Collection` boundary via a hand-rolled fake implementing only the methods we use (`bulkWrite`, `find`, `deleteMany`, `aggregate`). Keep the fake small and obvious.
-
-### Integration tests (live Atlas, gated on env)
-
-Run against a real cluster when `VAULT_VECTOR_TEST_URI` is set. CI in the hackathon timeframe is the developer's machine, so these are run manually before each commit but skipped otherwise.
-
-- Sync inserts the expected docs.
-- Sync deletes orphans on second run after files are removed.
-- `$vectorSearch` returns sensible top-3 results for a known-good query against a known-good seed corpus.
-- Oversized document is rejected without aborting the run.
+Mock the Atlas `Collection` boundary via a hand-rolled fake implementing only the methods we use (`bulkWrite`, `find`, `deleteMany`, `aggregate`). Keep the fake small and obvious. The sync orchestration and search query construction call into the fake; behavior against a real cluster is verified by the manual smoke test below.
 
 ### Manual smoke test (final gate)
 
