@@ -42,7 +42,10 @@ export class FakeCollection implements CollectionLike {
     return { deletedCount };
   }
 
-  aggregate(_pipeline: unknown[]) {
+  lastPipeline: unknown[] | null = null;
+
+  aggregate(pipeline: unknown[]) {
+    this.lastPipeline = pipeline;
     const results = this.aggregateResults;
     return { toArray: async () => results };
   }

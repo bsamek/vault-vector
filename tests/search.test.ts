@@ -212,3 +212,74 @@ describe('applyRerank', () => {
     ).rejects.toThrow('boom');
   });
 });
+
+describe('executeSearch with rerank', () => {
+  it('over-fetches candidateCount(limit) from the collection and reranks to limit', async () => {
+    const fake = new FakeCollection();
+    fake.aggregateResults = Array.from({ length: 25 }, (_, i) => ({
+      path: `n${i}.md`,
+      content: `body ${i}`,
+      score: 1 - i * 0.01,
+    }));
+
+    const reranker: VoyageReranker = {
+      async rerank(_q, documents) {
+        return documents
+          .map((_, i) => ({ index: i, relevanceScore: i / 100 }))
+          .reverse(); // last doc becomes top
+      },
+    };
+
+    const hits = await executeSearch(
+      fake,
+      { index: 'idx', query: 'hello', limit: 5 },
+      { reranker, instruction: '' }
+    );
+
+    expect(hits).toHaveLength(5);
+    expect(hits[0].path).toBe('n24.md');
+    const pipelineUsed = fake.lastPipeline![0] as { $vectorSearch: { limit: number } };
+    expect(pipelineUsed.$vectorSearch.limit).toBe(25);
+  });
+});
+
+describe('executeLocalSearch with rerank', () => {
+  it('over-fetches candidateCount(limit) from the store and reranks to limit', async () => {
+    const embed = vi.fn(async () => [[1, 0]]);
+    const voyage: VoyageClient = { embed };
+
+    const entries = Array.from({ length: 60 }, (_, i) => ({
+      path: `n${i}.md`,
+      embedding: [1, i * 0.001],
+      content: `body ${i}`,
+    }));
+
+    const store = createLocalStore({
+      adapter: new MemoryAdapter(),
+      path: 'cache.json',
+      model: 'voyage-4',
+    });
+    await store.load();
+    for (const e of entries) {
+      store.upsert(e.path, { mtime: 0, embedding: e.embedding, content: e.content });
+    }
+
+    const reranker: VoyageReranker = {
+      async rerank(_q, documents) {
+        return documents
+          .map((_, i) => ({ index: i, relevanceScore: i / 100 }))
+          .reverse();
+      },
+    };
+
+    const hits = await executeLocalSearch(
+      voyage,
+      store,
+      'find',
+      5,
+      { reranker, instruction: '' }
+    );
+
+    expect(hits).toHaveLength(5);
+  });
+});

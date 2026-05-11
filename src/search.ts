@@ -47,28 +47,42 @@ export function buildVectorSearchPipeline(opts: {
 
 export async function executeSearch(
   collection: CollectionLike,
-  opts: { index: string; query: string; limit: number }
+  opts: { index: string; query: string; limit: number },
+  rerank?: RerankConfig
 ): Promise<SearchHit[]> {
   if (!opts.query.trim()) return [];
-  const pipeline = buildVectorSearchPipeline(opts);
+  const fetchLimit = rerank ? candidateCount(opts.limit) : opts.limit;
+  const pipeline = buildVectorSearchPipeline({
+    index: opts.index,
+    query: opts.query,
+    limit: fetchLimit,
+  });
   const docs = await collection.aggregate(pipeline).toArray();
-  return docs.map(d => ({
+  const hits: SearchHit[] = docs.map(d => ({
     path: String(d.path),
     snippet: renderSnippet(String(d.content)),
     content: String(d.content),
     score: typeof d.score === 'number' ? d.score : 0,
   }));
+  if (!rerank) return hits;
+  const reranked = await applyRerank(hits, opts.query, rerank);
+  return reranked.slice(0, opts.limit);
 }
 
 export async function executeLocalSearch(
   voyage: VoyageClient,
   store: LocalStore,
   query: string,
-  limit: number
+  limit: number,
+  rerank?: RerankConfig
 ): Promise<SearchHit[]> {
   if (!query.trim()) return [];
   const [queryEmbedding] = await voyage.embed([query], 'query');
-  return searchLocalStore(store, queryEmbedding, limit);
+  const fetchLimit = rerank ? candidateCount(limit) : limit;
+  const hits = searchLocalStore(store, queryEmbedding, fetchLimit);
+  if (!rerank) return hits;
+  const reranked = await applyRerank(hits, query, rerank);
+  return reranked.slice(0, limit);
 }
 
 export interface RerankConfig {
