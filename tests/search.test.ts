@@ -136,6 +136,7 @@ describe('candidateCount', () => {
     expect(candidateCount(5)).toBe(25);
     expect(candidateCount(10)).toBe(50);
     expect(candidateCount(11)).toBe(50);
+    expect(candidateCount(20)).toBe(50);
     expect(candidateCount(100)).toBe(50);
   });
 });
@@ -281,5 +282,6 @@ describe('executeLocalSearch with rerank', () => {
     );
 
     expect(hits).toHaveLength(5);
+    expect(hits[0].path).toBe('n24.md');
   });
 });

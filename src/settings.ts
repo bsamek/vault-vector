@@ -124,6 +124,7 @@ export class VaultVectorSettingTab extends PluginSettingTab {
           .onChange(async (value: string) => {
             this.plugin.settings.voyageApiKey = value.trim();
             await this.plugin.saveSettings();
+            this.display();
           });
         (text.inputEl as HTMLInputElement).type = 'password';
       });
