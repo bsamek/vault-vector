@@ -4,6 +4,7 @@ import {
   buildVectorSearchPipeline,
   executeSearch,
   executeLocalSearch,
+  candidateCount,
 } from '../src/search';
 import { FakeCollection } from './fakes/collection';
 import { createLocalStore, type FileAdapter } from '../src/local-store';
@@ -124,5 +125,15 @@ describe('executeLocalSearch', () => {
 
     expect(embed.mock.calls[0][1]).toBe('query');
     expect(hits[0].path).toBe('close.md');
+  });
+});
+
+describe('candidateCount', () => {
+  it('multiplies limit by 5 and caps at 50', () => {
+    expect(candidateCount(1)).toBe(5);
+    expect(candidateCount(5)).toBe(25);
+    expect(candidateCount(10)).toBe(50);
+    expect(candidateCount(11)).toBe(50);
+    expect(candidateCount(100)).toBe(50);
   });
 });

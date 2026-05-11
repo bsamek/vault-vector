@@ -4,6 +4,13 @@ import type { LocalStore } from './local-store';
 import { searchLocalStore } from './local-search';
 import type { VoyageClient } from './voyage';
 
+export const RERANK_CANDIDATE_MULTIPLIER = 5;
+export const RERANK_CANDIDATE_CAP = 50;
+
+export function candidateCount(limit: number): number {
+  return Math.min(limit * RERANK_CANDIDATE_MULTIPLIER, RERANK_CANDIDATE_CAP);
+}
+
 export function renderSnippet(content: string, maxChars: number = 200): string {
   const cleaned = content.trim().replace(/\s+/g, ' ');
   if (cleaned.length <= maxChars) return cleaned;
