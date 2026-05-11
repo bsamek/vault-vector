@@ -54,6 +54,7 @@ export class VaultVectorSearchModal extends SuggestModal<SearchHit> {
   private readonly collection: CollectionLike;
   private readonly settings: VaultVectorSettings;
   private readonly onPick: (path: string) => void;
+  private lastSearchId = 0;
 
   constructor(
     app: App,
@@ -69,6 +70,9 @@ export class VaultVectorSearchModal extends SuggestModal<SearchHit> {
   }
 
   async getSuggestions(query: string): Promise<SearchHit[]> {
+    const id = ++this.lastSearchId;
+    await new Promise(resolve => setTimeout(resolve, 300));
+    if (id !== this.lastSearchId) return [];
     try {
       return await executeSearch(this.collection, {
         index: this.settings.indexName,
