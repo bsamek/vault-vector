@@ -1,0 +1,9 @@
+{
+  "id": "vault-vector",
+  "name": "Vault Vector",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Semantic search across your vault using MongoDB Atlas automated embeddings.",
+  "author": "Brian Samek",
+  "isDesktopOnly": true
+}
