@@ -126,16 +126,35 @@ All thrown errors surface as Obsidian `Notice` with a short user message and ful
 
 ## Testing
 
-Manual smoke test against a real Cloud Dev cluster:
+Built test-first (red/green/refactor) using Vitest. Three layers:
 
-1. Create a test vault with ~10 notes covering varied topics.
-2. Configure plugin, run Sync. Verify Atlas collection has 10 docs.
-3. Run Search with three queries that should match by meaning, not keyword. Verify expected notes appear in top results.
+### Unit tests (pure logic, fast, no network)
+
+- **Sync diff** (`sync.ts`): given a list of vault paths and a list of Atlas `_id`s, produce the set to upsert and the set to delete. Tested with fixed inputs.
+- **Snippet rendering** (`search.ts`): given raw note content and a query, produce the 200-char snippet shown in the modal. Tested with edge cases (empty content, content shorter than 200 chars, content with newlines).
+- **Settings validation** (`settings.ts`): given user-entered URI strings, classify as valid / missing / malformed.
+
+Mock the Atlas `Collection` boundary via a hand-rolled fake implementing only the methods we use (`bulkWrite`, `find`, `deleteMany`, `aggregate`). Keep the fake small and obvious.
+
+### Integration tests (live Atlas, gated on env)
+
+Run against a real cluster when `VAULT_VECTOR_TEST_URI` is set. CI in the hackathon timeframe is the developer's machine, so these are run manually before each commit but skipped otherwise.
+
+- Sync inserts the expected docs.
+- Sync deletes orphans on second run after files are removed.
+- `$vectorSearch` returns sensible top-3 results for a known-good query against a known-good seed corpus.
+- Oversized document is rejected without aborting the run.
+
+### Manual smoke test (final gate)
+
+Run against the in-house Evergreen documentation as the test vault — better signal than a synthetic test vault, since Evergreen docs cover many distinct topics:
+
+1. Point the plugin at a clone of the Evergreen docs repo as an Obsidian vault.
+2. Run Sync. Verify Atlas doc count matches the markdown file count.
+3. Run Search with three semantic queries (e.g., "how do I retry a failed task", "configuring task priorities", "patch builds"). Verify the top results are documents that actually cover those topics, not just keyword matches.
 4. Open a result from the modal. Verify the correct note opens.
-5. Delete two notes from the vault, re-run Sync. Verify Atlas count drops to 8.
+5. Delete two doc files from the vault clone, re-run Sync. Verify Atlas count drops by 2.
 6. Add a giant note (>32K tokens). Verify the rejection is reported in the final sync Notice and that the sync run completes successfully for all other notes.
-
-No automated test suite for MVP. Core logic is glue over external systems and is faster to verify by hand for a hackathon timeline.
 
 ## Build and packaging
 
