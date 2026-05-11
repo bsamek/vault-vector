@@ -208,6 +208,8 @@ export default class VaultVectorPlugin extends Plugin {
     try {
       if (this.autoSync) {
         await this.autoSync.flushNow();
+        const s = this.autoSync.getStatus();
+        if (s.kind === 'error') throw new Error(s.message);
       } else {
         await this.runSyncPipeline();
       }
