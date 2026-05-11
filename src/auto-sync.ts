@@ -177,6 +177,7 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
     },
     async flushNow() {
       if (debounceTimer !== null) { deps.clearTimer(debounceTimer); debounceTimer = null; }
+      sweepRequested = true;
       await runFlush();
     },
     getStatus() {

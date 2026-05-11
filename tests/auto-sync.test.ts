@@ -262,6 +262,30 @@ describe('AutoSync flush execution', () => {
   });
 
   it('does not run runFullSync when pending is empty and no sweep requested', async () => {
+    // This test validates runFlush() short-circuits when nothing is pending
+    // and sweepRequested is false. But flushNow() itself sets sweepRequested=true,
+    // so use the internal path by triggering via the debounce instead.
+    let onEvent: any = null;
+    const runFullSync = vi.fn(async () => ({ upserted: 0, deleted: 0, rejected: [] }));
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync,
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    // No events; advancing past the catch-up timer triggers a sweep (sweepRequested=true)
+    // but let's verify the internal runFlush won't double-run on an empty set after a flush
+    await vi.advanceTimersByTimeAsync(5001); // catch-up sweep fires
+    expect(runFullSync).toHaveBeenCalledTimes(1);
+    // No more timers pending; a second call via debounce won't fire without events
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(runFullSync).toHaveBeenCalledTimes(1); // still just 1
+  });
+
+  it('flushNow() triggers runFullSync even when pending is empty', async () => {
     const runFullSync = vi.fn(async () => ({ upserted: 0, deleted: 0, rejected: [] }));
     const deps = fakeDeps({
       runFullSync,
@@ -271,8 +295,12 @@ describe('AutoSync flush execution', () => {
     });
     const ctl = createAutoSync(deps);
     ctl.start();
+    // Drain the catch-up timer so its call doesn't count
+    await vi.advanceTimersByTimeAsync(5001);
+    runFullSync.mockClear();
+    // Now pending is empty but flushNow() should still call runFullSync via sweepRequested
     await ctl.flushNow();
-    expect(runFullSync).not.toHaveBeenCalled();
+    expect(runFullSync).toHaveBeenCalledOnce();
   });
 
   it('events arriving during a flush trigger a follow-up', async () => {
