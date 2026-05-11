@@ -315,3 +315,53 @@ describe('AutoSync catch-up', () => {
     expect(runFullSync).toHaveBeenCalledOnce();
   });
 });
+
+describe('AutoSync error handling', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('retries with backoff after a failure', async () => {
+    let onEvent: any = null;
+    const runFullSync = vi.fn()
+      .mockRejectedValueOnce(new Error('e1'))
+      .mockResolvedValue({ upserted: 0, deleted: 0, rejected: [] });
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync,
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'modify', path: 'a.md' });
+    await vi.advanceTimersByTimeAsync(8001);
+    expect(runFullSync).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(runFullSync).toHaveBeenCalledTimes(2);
+    expect(ctl.getStatus().kind).toBe('idle');
+  });
+
+  it('surfaces a single notice after 3 consecutive failures', async () => {
+    let onEvent: any = null;
+    const runFullSync = vi.fn().mockRejectedValue(new Error('persistent'));
+    const notice = vi.fn();
+    const deps = fakeDeps({
+      subscribeVaultEvents: (cb) => { onEvent = cb; return () => {}; },
+      runFullSync,
+      notice,
+      setTimer: (cb, ms) => setTimeout(cb, ms) as unknown as number,
+      clearTimer: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      now: () => Date.now(),
+    });
+    const ctl = createAutoSync(deps);
+    ctl.start();
+    onEvent({ kind: 'modify', path: 'a.md' });
+    await vi.advanceTimersByTimeAsync(8001);    // fail 1
+    await vi.advanceTimersByTimeAsync(30_000);  // fail 2
+    await vi.advanceTimersByTimeAsync(120_000); // fail 3 -> notice
+    expect(notice).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(600_000); // fail 4 -> no extra notice
+    expect(notice).toHaveBeenCalledTimes(1);
+  });
+});

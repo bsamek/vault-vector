@@ -45,6 +45,8 @@ const SIZE_CAP = 25;
 const AGE_CAP_MS = 60_000;
 const SWEEP_MS = 10 * 60 * 1000;
 const CATCHUP_MS = 5000;
+const BACKOFF_MS = [30_000, 120_000, 600_000];
+const NOTICE_AFTER = 3;
 
 export function createAutoSync(deps: AutoSyncDeps): AutoSync {
   let unsubscribe: (() => void) | null = null;
@@ -76,6 +78,8 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
   }
 
   let flushing = false;
+  let consecutiveFailures = 0;
+  let noticeShown = false;
 
   function requestSweep(): void {
     sweepRequested = true;
@@ -99,12 +103,23 @@ export function createAutoSync(deps: AutoSyncDeps): AutoSync {
       await deps.runFullSync();
       for (const key of inFlightKeys) pending.delete(key);
       if (pending.size === 0) oldestPendingAt = null;
+      consecutiveFailures = 0;
+      noticeShown = false;
       emitStatus({ kind: 'idle', lastSyncAt: deps.now() });
       succeeded = true;
     } catch (err) {
+      consecutiveFailures++;
       const message = err instanceof Error ? err.message : String(err);
       deps.logError('AutoSync flush failed', err);
       emitStatus({ kind: 'error', message });
+      if (consecutiveFailures >= NOTICE_AFTER && !noticeShown) {
+        deps.notice(`Vault Vector auto-sync failing: ${message}`);
+        noticeShown = true;
+      }
+      // Cancel any pending debounce; the backoff timer takes over retry responsibility.
+      if (debounceTimer !== null) { deps.clearTimer(debounceTimer); debounceTimer = null; }
+      const idx = Math.min(consecutiveFailures - 1, BACKOFF_MS.length - 1);
+      deps.setTimer(() => { void runFlush(); }, BACKOFF_MS[idx]);
     } finally {
       flushing = false;
       if (succeeded && pending.size > 0) {
