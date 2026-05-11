@@ -223,7 +223,7 @@ export class VaultVectorSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Rerank instruction (optional)')
-      .setDesc('Prepended to the query when reranking. Use it to steer the reranker, e.g. "Prefer notes that explain why over notes that list how."')
+      .setDesc('Prepended to the query when reranking. Use it to steer the reranker, e.g. "Prefer notes that explain why over notes that list how." Adds latency; leave blank for faster reranking.')
       .addTextArea(text =>
         text
           .setPlaceholder('e.g. Prefer notes that explain why over notes that list how.')
