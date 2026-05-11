@@ -1,3 +1,5 @@
+import { App, PluginSettingTab, Setting } from 'obsidian';
+
 export interface VaultVectorSettings {
   uri: string;
   database: string;
@@ -22,9 +24,6 @@ export function validateUri(uri: string): UriValidation {
   if (!/^mongodb(\+srv)?:\/\//.test(trimmed)) return 'malformed';
   return 'valid';
 }
-
-import { App, PluginSettingTab, Setting } from 'obsidian';
-import type VaultVectorPlugin from './main';
 
 interface VaultVectorPluginForSettings {
   settings: VaultVectorSettings;
