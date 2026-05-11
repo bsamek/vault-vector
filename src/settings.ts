@@ -17,6 +17,7 @@ export interface VaultVectorSettings {
   rerankCandidateCap: number;
   rerankDocCharLimit: number;
   debugMode: boolean;
+  autoSyncEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: VaultVectorSettings = {
@@ -34,6 +35,7 @@ export const DEFAULT_SETTINGS: VaultVectorSettings = {
   rerankCandidateCap: 50,
   rerankDocCharLimit: 0,
   debugMode: false,
+  autoSyncEnabled: true,
 };
 
 export type UriValidation = 'missing' | 'malformed' | 'valid';
@@ -230,6 +232,20 @@ export class VaultVectorSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.rerankInstruction)
           .onChange(async (value: string) => {
             this.plugin.settings.rerankInstruction = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    containerEl.createEl('h3', { text: 'Auto-sync' });
+
+    new Setting(containerEl)
+      .setName('Auto-sync on file changes')
+      .setDesc('When on, Vault Vector reindexes notes shortly after you edit, create, rename, or delete them. When off, only the manual Vault Vector: Sync command updates the index.')
+      .addToggle(toggle =>
+        toggle
+          .setValue(this.plugin.settings.autoSyncEnabled)
+          .onChange(async (value: boolean) => {
+            this.plugin.settings.autoSyncEnabled = value;
             await this.plugin.saveSettings();
           })
       );

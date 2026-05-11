@@ -50,6 +50,10 @@ describe('DEFAULT_SETTINGS', () => {
     expect(DEFAULT_SETTINGS.debugMode).toBe(false);
   });
 
+  it('defaults auto-sync on', () => {
+    expect(DEFAULT_SETTINGS.autoSyncEnabled).toBe(true);
+  });
+
   it('defaults rerank candidate cap to 50 and doc char limit to 0 (disabled)', () => {
     expect(DEFAULT_SETTINGS.rerankCandidateCap).toBe(50);
     expect(DEFAULT_SETTINGS.rerankDocCharLimit).toBe(0);
