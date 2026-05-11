@@ -30,4 +30,13 @@ describe('DEFAULT_SETTINGS', () => {
     expect(DEFAULT_SETTINGS.resultLimit).toBe(10);
     expect(DEFAULT_SETTINGS.uri).toBe('');
   });
+
+  it('defaults to atlas-auto provider for backward compatibility', () => {
+    expect(DEFAULT_SETTINGS.embeddingProvider).toBe('atlas-auto');
+  });
+
+  it('defaults voyage credentials to empty and model to voyage-4', () => {
+    expect(DEFAULT_SETTINGS.voyageApiKey).toBe('');
+    expect(DEFAULT_SETTINGS.voyageModel).toBe('voyage-4');
+  });
 });

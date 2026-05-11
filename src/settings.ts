@@ -1,11 +1,16 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 
+export type EmbeddingProvider = 'atlas-auto' | 'voyage-local';
+
 export interface VaultVectorSettings {
   uri: string;
   database: string;
   collection: string;
   indexName: string;
   resultLimit: number;
+  embeddingProvider: EmbeddingProvider;
+  voyageApiKey: string;
+  voyageModel: string;
 }
 
 export const DEFAULT_SETTINGS: VaultVectorSettings = {
@@ -14,6 +19,9 @@ export const DEFAULT_SETTINGS: VaultVectorSettings = {
   collection: 'notes',
   indexName: 'vault_vector',
   resultLimit: 10,
+  embeddingProvider: 'atlas-auto',
+  voyageApiKey: '',
+  voyageModel: 'voyage-4',
 };
 
 export type UriValidation = 'missing' | 'malformed' | 'valid';
@@ -43,8 +51,23 @@ export class VaultVectorSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     new Setting(containerEl)
+      .setName('Embedding provider')
+      .setDesc('Atlas auto-embed uses MongoDB to generate and search embeddings server-side. Voyage direct calls Voyage AI and stores vectors locally.')
+      .addDropdown(drop =>
+        drop
+          .addOption('atlas-auto', 'Atlas auto-embed')
+          .addOption('voyage-local', 'Voyage direct (local)')
+          .setValue(this.plugin.settings.embeddingProvider)
+          .onChange(async (value: string) => {
+            this.plugin.settings.embeddingProvider = value as EmbeddingProvider;
+            await this.plugin.saveSettings();
+            this.display();
+          })
+      );
+
+    new Setting(containerEl)
       .setName('Connection URI')
-      .setDesc('MongoDB Atlas connection string (mongodb+srv://...)')
+      .setDesc('MongoDB Atlas connection string (mongodb+srv://...). Used only in Atlas auto-embed mode.')
       .addText(text =>
         text
           .setPlaceholder('mongodb+srv://user:pass@cluster/...')
@@ -81,6 +104,30 @@ export class VaultVectorSettingTab extends PluginSettingTab {
       .addText(text =>
         text.setValue(this.plugin.settings.indexName).onChange(async (value: string) => {
           this.plugin.settings.indexName = value.trim();
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName('Voyage API key')
+      .setDesc('Voyage AI API key. Used only in Voyage direct mode.')
+      .addText(text => {
+        text
+          .setPlaceholder('pa-...')
+          .setValue(this.plugin.settings.voyageApiKey)
+          .onChange(async (value: string) => {
+            this.plugin.settings.voyageApiKey = value.trim();
+            await this.plugin.saveSettings();
+          });
+        (text.inputEl as HTMLInputElement).type = 'password';
+      });
+
+    new Setting(containerEl)
+      .setName('Voyage model')
+      .setDesc('Voyage embedding model. Changing this invalidates the local cache on next sync.')
+      .addText(text =>
+        text.setValue(this.plugin.settings.voyageModel).onChange(async (value: string) => {
+          this.plugin.settings.voyageModel = value.trim();
           await this.plugin.saveSettings();
         })
       );
