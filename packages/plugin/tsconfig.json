@@ -13,7 +13,10 @@
     "strictNullChecks": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "lib": ["DOM", "ES2020", "ES2021.String"]
+    "lib": ["DOM", "ES2020", "ES2021.String"],
+    "paths": {
+      "@vault-vector/core": ["../../packages/core/src/index.ts"]
+    }
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.ts"]
 }

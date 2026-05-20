@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createAtlasFactory, type Connector, type MongoClientLike } from '../src/atlas';
 import { FakeCollection } from './fakes/collection';
-import { DEFAULT_SETTINGS } from '../src/settings';
+import { DEFAULT_SETTINGS } from '../src/settings-types';
 
 function makeFakeClient() {
   const fake = new FakeCollection();

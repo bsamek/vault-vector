@@ -1,34 +1,36 @@
 import { MongoClient } from 'mongodb';
 import { Notice, Plugin, setTooltip, TFile } from 'obsidian';
-import { createAutoSync, type AutoSync, type AutoSyncEvent, type AutoSyncStatus } from './auto-sync';
 import {
+  createAutoSync,
+  type AutoSync,
+  type AutoSyncEvent,
+  type AutoSyncStatus,
   type AtlasFactory,
   type Connector,
   createAtlasFactory,
   type MongoClientLike,
-} from './atlas';
-import {
   createLocalStore,
   type FileAdapter,
   type LocalStore,
-} from './local-store';
-import {
   DEFAULT_SETTINGS,
   validateUri,
   type VaultVectorSettings,
-  VaultVectorSettingTab,
-} from './settings';
-import { type NoteInput, runLocalSync, runSync } from './sync';
-import {
+  type NoteInput,
+  runLocalSync,
+  runSync,
   type DebugLogger,
   executeLocalSearch,
   executeSearch,
   type RerankConfig,
   type SearchFn,
   type SearchHit,
-  VaultVectorSearchModal,
-} from './search';
-import { createVoyageClient, createVoyageReranker, type VoyageClient, type VoyageReranker } from './voyage';
+  createVoyageClient,
+  createVoyageReranker,
+  type VoyageClient,
+  type VoyageReranker,
+} from '@vault-vector/core';
+import { VaultVectorSearchModal } from './search-modal';
+import { VaultVectorSettingTab } from './settings-tab';
 
 const realConnector: Connector = async (uri) => {
   const client = new MongoClient(uri);
@@ -189,7 +191,7 @@ export default class VaultVectorPlugin extends Plugin {
     return inputs;
   }
 
-  private async runSyncPipeline(): Promise<import('./sync').SyncResult> {
+  private async runSyncPipeline(): Promise<import('@vault-vector/core').SyncResult> {
     if (this.settings.embeddingProvider === 'voyage-local') {
       if (!this.settings.voyageApiKey.trim()) throw new Error('Voyage API key missing');
       const inputs = await this.collectInputs();

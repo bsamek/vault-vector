@@ -5,3 +5,4 @@ main.js
 data.json
 coverage/
 docs/superpowers/
+packages/*/dist/

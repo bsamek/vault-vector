@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, validateUri } from '../src/settings';
+import { DEFAULT_SETTINGS, validateUri } from '../src/settings-types';
 
 describe('validateUri', () => {
   it('reports missing for empty or whitespace-only strings', () => {

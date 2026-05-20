@@ -27,7 +27,7 @@ export interface AtlasFactory {
   close(): Promise<void>;
 }
 
-import type { VaultVectorSettings } from './settings';
+import type { VaultVectorSettings } from './settings-types';
 
 export function createAtlasFactory(
   settings: VaultVectorSettings,
