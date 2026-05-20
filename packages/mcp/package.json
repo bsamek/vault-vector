@@ -1,0 +1,24 @@
+{
+  "name": "vault-vector-mcp",
+  "version": "0.1.0",
+  "description": "MCP server exposing vault-vector search",
+  "private": true,
+  "bin": {
+    "vault-vector-mcp": "dist/bin.js"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/bin.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@vault-vector/core": "*",
+    "mongodb": "^6.8.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}
