@@ -3,8 +3,8 @@ import type { LocalStore } from './local-store';
 import { searchLocalStore } from './local-search';
 import type { VoyageClient, VoyageReranker } from './voyage';
 
-export const RERANK_CANDIDATE_MULTIPLIER = 5;
-export const RERANK_CANDIDATE_CAP = 50;
+const RERANK_CANDIDATE_MULTIPLIER = 5;
+const RERANK_CANDIDATE_CAP = 50;
 
 export function candidateCount(limit: number, cap: number = RERANK_CANDIDATE_CAP): number {
   return Math.min(limit * RERANK_CANDIDATE_MULTIPLIER, cap);

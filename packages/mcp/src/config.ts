@@ -33,15 +33,21 @@ export async function loadConfig(opts: {
   const embeddingsPath = path.join(pluginDir, 'embeddings.json');
   const dataJsonPath = path.join(pluginDir, 'data.json');
 
-  // Try to read data.json; fall back to defaults with a warning
   let fileSettings: Partial<VaultVectorSettings> = {};
+  let raw: string | null = null;
   try {
-    const raw = await fs.readFile(dataJsonPath, 'utf8');
-    fileSettings = JSON.parse(raw) as Partial<VaultVectorSettings>;
+    raw = await fs.readFile(dataJsonPath, 'utf8');
   } catch {
     process.stderr.write(
-      `vault-vector-mcp: warning: could not read ${dataJsonPath}, using defaults\n`
+      `vault-vector-mcp: warning: ${dataJsonPath} not found, using defaults\n`
     );
+  }
+  if (raw !== null) {
+    try {
+      fileSettings = JSON.parse(raw) as Partial<VaultVectorSettings>;
+    } catch (err) {
+      throw new Error(`Failed to parse ${dataJsonPath}: ${(err as Error).message}`);
+    }
   }
 
   // Merge: defaults < file < env overrides

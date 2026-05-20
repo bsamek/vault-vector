@@ -191,12 +191,12 @@ describe('buildServer – atlas-auto path', () => {
     const voyageStub = makeVoyageStub([0.1, 0.9]);
     const fileAdapter = new NodeFileAdapter();
 
-    const { callTool } = buildServer({
+    const { callTool, close } = buildServer({
       settings,
       embeddingsPath,
       fileAdapter,
       voyageFactory: () => voyageStub,
-      atlasFactory: () => fakeMongoClient as never,
+      connector: async () => fakeMongoClient as never,
     });
 
     const result = await callTool({ query: 'atlas search' });
@@ -204,5 +204,8 @@ describe('buildServer – atlas-auto path', () => {
     expect(result.content.length).toBe(2);
     expect(result.content[0].text).toContain('atlas-note-1.md');
     expect(result.content[1].text).toContain('atlas-note-2.md');
+
+    await close();
+    expect(fakeMongoClient.close).toHaveBeenCalled();
   });
 });

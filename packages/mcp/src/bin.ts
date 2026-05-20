@@ -27,14 +27,18 @@ async function main() {
 
   const config = await loadConfig({ vaultPath, env: process.env });
   const fileAdapter = new NodeFileAdapter();
-  const { server } = buildServer({ ...config, fileAdapter });
+  const { server, close } = buildServer({ ...config, fileAdapter });
 
   const transport = new StdioServerTransport();
 
-  // Graceful shutdown
   const shutdown = async () => {
     try {
-      await server.close();
+      await transport.close();
+    } catch {
+      // ignore
+    }
+    try {
+      await close();
     } catch {
       // ignore
     }

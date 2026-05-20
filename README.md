@@ -30,7 +30,7 @@ cd vault-vector
 npm install && npm run build
 ```
 
-The build produces `main.js` and `manifest.json` in the repo root. Those two files are what Obsidian needs. Pick one of the following ways to get them into your vault.
+The build produces `main.js` and `manifest.json` under `packages/plugin/`. Those two files are what Obsidian needs. Pick one of the following ways to get them into your vault.
 
 ### Option A — symlink (recommended for development)
 
@@ -38,14 +38,14 @@ Edits to the built files in this repo show up in the vault on next reload:
 
 ```
 mkdir -p "<your vault>/.obsidian/plugins/vault-vector"
-ln -sf "$PWD/main.js" "$PWD/manifest.json" "<your vault>/.obsidian/plugins/vault-vector/"
+ln -sf "$PWD/packages/plugin/main.js" "$PWD/packages/plugin/manifest.json" "<your vault>/.obsidian/plugins/vault-vector/"
 ```
 
 ### Option B — copy (one-off install)
 
 ```
 mkdir -p "<your vault>/.obsidian/plugins/vault-vector"
-cp main.js manifest.json "<your vault>/.obsidian/plugins/vault-vector/"
+cp packages/plugin/main.js packages/plugin/manifest.json "<your vault>/.obsidian/plugins/vault-vector/"
 ```
 
 After either option: in Obsidian, Settings → Community plugins → Reload, then enable **Vault Vector**. (If community plugins are disabled, turn off Restricted Mode first.)
@@ -103,6 +103,21 @@ Reranking always calls Voyage, even in Atlas mode. In Atlas mode the **Voyage AP
 
 - **Vault Vector: Sync** — Embeds and stores every `.md` file in your vault. In Atlas mode, pushes to the collection; in Voyage mode, writes to the local cache. Removes entries for deleted files. Reports counts in a notification.
 - **Vault Vector: Search** — Opens a search modal. Type a natural-language query; results are ranked by semantic similarity. Enter opens the selected note.
+
+## Use from AI tools (MCP)
+
+The repo also ships an MCP server (`packages/mcp/`) that exposes the same search to AI tools like Claude Code. It reads the plugin's settings from `<vault>/.obsidian/plugins/vault-vector/data.json` and queries the same `embeddings.json` the plugin maintains, so no duplicate configuration.
+
+Build, then register with Claude Code:
+
+```
+npm run build
+claude mcp add vault-vector node "$PWD/packages/mcp/dist/bin.js" --vault "<your vault>"
+```
+
+The server registers one tool, `search(query, limit?, rerank?)`. It hot-reloads the embeddings file on mtime change, so indexing done by the plugin (auto-sync or manual) shows up in the next MCP call without restarting. While Obsidian isn't running, the index is frozen at its last sync.
+
+Environment overrides: `VOYAGE_API_KEY` overrides the `voyageApiKey` from `data.json`; `VAULT_VECTOR_MODEL` overrides the embedding model.
 
 ## Smoke test
 
